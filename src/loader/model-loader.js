@@ -25,7 +25,9 @@ export function createModelLoader({ basePath = '/models/', GLTFLoaderImpl = GLTF
   async function tryLoadOne(filename) {
     const url = basePath + filename;
     if (missCache.has(url)) return null;
-    const fetchUrl = url + (url.includes('?') ? '&' : '?') + 'v=' + CACHE_BUSTER;
+    // NB: do NOT use `v=` as the param name — Vite intercepts that for its own module
+    // versioning and rewrites the response as an ES-module wrapper. Use a neutral name.
+    const fetchUrl = url + (url.includes('?') ? '&' : '?') + 'cb=' + CACHE_BUSTER;
     return await new Promise((resolve) => {
       loader.load(
         fetchUrl,
