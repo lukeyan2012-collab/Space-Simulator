@@ -13,7 +13,10 @@ export function createBodyRecord(body, mesh, sceneScale) {
     id: body.id,
     body,
     object: mesh,
-    currentLod: 'low',
+    // 'placeholder' = sphere is showing, no GLB loaded yet. First LOD decision will trigger
+    // a load even if the target is 'low', so far bodies still get _1k.glb instead of staying as
+    // a colored sphere forever.
+    currentLod: 'placeholder',
     selected: false,
     hovered: false,
     sceneScale,
