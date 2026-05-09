@@ -4,8 +4,8 @@ const path = require('node:path');
 const target = path.resolve(__dirname, '..', '3D models');
 const link = path.resolve(__dirname, '..', 'public', 'models');
 if (!fs.existsSync(target)) {
-  console.error(`[setup-models] source folder missing: ${target}`);
-  process.exit(1);
+  console.warn(`[setup-models] source folder missing: ${target} — skipping junction/symlink. Run \`npm run setup:models\` after the assets are in place.`);
+  return;
 }
 try { fs.rmSync(link, { recursive: true, force: true, maxRetries: 3 }); } catch {}
 fs.mkdirSync(path.dirname(link), { recursive: true });
