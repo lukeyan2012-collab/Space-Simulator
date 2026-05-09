@@ -7,7 +7,7 @@ import { createVerletEngine } from '@/physics/verlet-engine.js';
 import {
   G, DISTANCE_SCALE, TIME_BASE_SECONDS_PER_REAL_SECOND, MAX_SUBSTEPS_PER_FRAME,
 } from '@/physics/constants.js';
-import { Mesh, SphereGeometry, MeshStandardMaterial, MeshBasicMaterial, PointLight } from 'three';
+import { Mesh, SphereGeometry, MeshBasicMaterial } from 'three';
 
 const canvas = document.getElementById('scene');
 const { scene, camera, renderer } = createScene(canvas, { width: innerWidth, height: innerHeight });
@@ -23,10 +23,11 @@ const engine = createVerletEngine();
 engine.addBody({ id: 'sun',   mass: M_SUN,   position: [0,0,0],  velocity: [0,0,0] });
 engine.addBody({ id: 'earth', mass: M_EARTH, position: [AU,0,0], velocity: [0, Math.sqrt(G*M_SUN/AU), 0] });
 
-const sun = new Mesh(new SphereGeometry(0.7, 32, 32), new MeshBasicMaterial({ color: 0xffaa33 }));
-const earth = new Mesh(new SphereGeometry(0.06, 24, 24), new MeshStandardMaterial({ color: 0x3377ff }));
+// Visual radii are exaggerated for the Stage 1 demo — Earth at physical scale would be sub-pixel
+// at 1 AU separation. Stage 2 replaces these with manifest-driven log-scaled placeholders + GLBs.
+const sun = new Mesh(new SphereGeometry(4.0, 32, 32), new MeshBasicMaterial({ color: 0xffaa33 }));
+const earth = new Mesh(new SphereGeometry(2.0, 24, 24), new MeshBasicMaterial({ color: 0x6aa9ff }));
 scene.add(sun, earth);
-scene.add(new PointLight(0xffffff, 2, 0, 2));
 
 const slider = createTimeSlider({ initial: 0.5 });
 
