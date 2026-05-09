@@ -1,19 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
-
-// Mock WebGLRenderer to avoid jsdom WebGL limitations
-vi.mock('three', async () => {
-  const actual = await vi.importActual('three');
-  return {
-    ...actual,
-    WebGLRenderer: vi.fn(function (options) {
-      this.capabilities = { logarithmicDepthBuffer: true };
-      this.domElement = options.canvas;
-      this.setPixelRatio = vi.fn();
-      this.setSize = vi.fn();
-    }),
-  };
-});
-
+import { describe, it, expect } from 'vitest';
 import { createScene } from '@/render/scene.js';
 
 describe('createScene', () => {
