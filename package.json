@@ -11,9 +11,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "setup:models": "node scripts/setup-models.cjs",
-    "postinstall": "node scripts/setup-models.cjs"
+    "test:watch": "vitest"
   },
   "keywords": [],
   "author": "",
