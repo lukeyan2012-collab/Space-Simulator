@@ -1,0 +1,5 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #000; color: #eee; font-family: -apple-system, Segoe UI, Roboto, sans-serif; }
+canvas#scene { position: fixed; inset: 0; display: block; }
+#ui-root { position: fixed; inset: 0; pointer-events: none; }
+#ui-root > * { pointer-events: auto; }
