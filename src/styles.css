@@ -38,3 +38,8 @@ canvas#scene { position: fixed; inset: 0; display: block; }
 .props-panel dt { opacity: 0.6; }
 .props-panel dd { margin: 0; word-break: break-all; }
 .props-empty { opacity: 0.5; font-size: 12px; text-align: center; padding: 20px 0; }
+.hover-card { position: fixed; max-width: 260px; padding: 10px 12px; background: rgba(15,15,25,0.92); border: 1px solid #2a2a3a; border-radius: 6px; font-size: 12px; pointer-events: none; opacity: 0; transition: opacity 120ms; z-index: 100; }
+.hover-card.hc-shown { opacity: 1; }
+.hc-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.hc-row { display: flex; justify-content: space-between; opacity: 0.7; }
+.hc-desc { margin-top: 6px; opacity: 0.6; font-size: 11px; }

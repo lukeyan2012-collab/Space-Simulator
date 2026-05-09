@@ -4,6 +4,7 @@ import { createCameraController } from '@/interaction/camera-controls.js';
 import { createLoadingScreen } from '@/ui/loading-screen.js';
 import { createTimeSlider } from '@/ui/time-slider.js';
 import { createPropertiesPanel } from '@/ui/properties-panel.js';
+import { createHoverCard } from '@/ui/hover-card.js';
 import { createSelectionRaycaster } from '@/interaction/raycaster.js';
 import { createVerletEngine } from '@/physics/verlet-engine.js';
 import {
@@ -67,7 +68,16 @@ const lodRuntime = createLodRuntime({ records, modelLoader, scene });
 const slider = createTimeSlider({ initial: 0.75 }); // 0.75 → 10× — visible orbit in ~36s
 
 const props = createPropertiesPanel();
+
+const hover = createHoverCard();
+const lastMouse = { x: 0, y: 0 };
+renderer.domElement.addEventListener('pointermove', (e) => {
+  lastMouse.x = e.clientX;
+  lastMouse.y = e.clientY;
+});
+
 let selected = null;
+let hoverGrace = null;
 
 createSelectionRaycaster({
   camera, domElement: renderer.domElement,
@@ -79,8 +89,18 @@ createSelectionRaycaster({
     if (!selected) props.update(null);
   },
   onHover: (rec, prev) => {
-    if (prev) prev.hovered = false;
-    if (rec) rec.hovered = true;
+    if (prev) {
+      clearTimeout(hoverGrace);
+      hoverGrace = setTimeout(() => {
+        prev.hovered = false;
+      }, 200);
+    }
+    if (rec) {
+      rec.hovered = true;
+      hover.show(rec.body, lastMouse.x, lastMouse.y);
+    } else {
+      hover.hide();
+    }
   },
 });
 
