@@ -21,7 +21,9 @@ loading.setProgress(0);
 const M_SUN = 1.989e30, M_EARTH = 5.972e24, AU = 1.496e11;
 const engine = createVerletEngine();
 engine.addBody({ id: 'sun',   mass: M_SUN,   position: [0,0,0],  velocity: [0,0,0] });
-engine.addBody({ id: 'earth', mass: M_EARTH, position: [AU,0,0], velocity: [0, Math.sqrt(G*M_SUN/AU), 0] });
+// Orbit in the XZ plane (ecliptic): Earth sweeps "horizontally" around the Sun
+// from the default camera angle, instead of bobbing up and down.
+engine.addBody({ id: 'earth', mass: M_EARTH, position: [AU,0,0], velocity: [0, 0, -Math.sqrt(G*M_SUN/AU)] });
 
 // Visual radii are exaggerated for the Stage 1 demo — Earth at physical scale would be sub-pixel
 // at 1 AU separation. Stage 2 replaces these with manifest-driven log-scaled placeholders + GLBs.
@@ -59,6 +61,15 @@ window.addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight, false);
 });
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') cam.release(); });
+
+// Reset View button — restores camera to initial position + target, releases follow.
+const resetBtn = document.createElement('button');
+resetBtn.className = 'reset-view-btn';
+resetBtn.textContent = 'Reset View';
+resetBtn.title = 'Restore default camera (also: ESC releases follow)';
+resetBtn.addEventListener('pointerdown', (e) => e.stopPropagation()); // don't trigger canvas pick
+resetBtn.addEventListener('click', () => cam.resetView());
+document.getElementById('ui-root').appendChild(resetBtn);
 
 let last = performance.now();
 function tick(now) {

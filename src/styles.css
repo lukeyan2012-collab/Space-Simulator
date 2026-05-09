@@ -16,3 +16,6 @@ canvas#scene { position: fixed; inset: 0; display: block; }
 .time-slider .ts-label { display: flex; justify-content: space-between; font-size: 12px; letter-spacing: 0.1em; opacity: 0.85; margin-bottom: 6px; }
 .time-slider input[type=range] { width: 100%; }
 .time-slider .ts-hint { font-size: 10px; opacity: 0.5; margin-top: 4px; text-align: center; }
+.reset-view-btn { position: fixed; top: 20px; right: 20px; padding: 8px 14px; background: rgba(15,15,25,0.7); border: 1px solid #2a2a3a; color: #eee; border-radius: 6px; font-size: 12px; letter-spacing: 0.05em; cursor: pointer; backdrop-filter: blur(6px); transition: background 120ms; }
+.reset-view-btn:hover { background: rgba(40,40,60,0.85); }
+.reset-view-btn:active { background: rgba(60,60,80,0.9); }

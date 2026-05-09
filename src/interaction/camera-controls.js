@@ -15,10 +15,21 @@ export function createCameraController(camera, domElement) {
   let followGetter = null;    // continuous: follow a moving body each frame
   const tmpDest = new Vector3();
 
+  // snapshot of the initial pose for resetView()
+  const initialCameraPos = camera.position.clone();
+  const initialTarget = controls.target.clone();
+
   function focus(vec3) { focusTarget = vec3.clone(); followGetter = null; }
   function follow(getterFn) { followGetter = getterFn; focusTarget = null; }
   function release() { followGetter = null; focusTarget = null; }
   function clearFocus() { release(); }
+
+  function resetView() {
+    release();
+    camera.position.copy(initialCameraPos);
+    controls.target.copy(initialTarget);
+    controls.update();
+  }
 
   function update(dt) {
     if (followGetter) {
@@ -39,7 +50,7 @@ export function createCameraController(camera, domElement) {
   }
 
   return {
-    controls, focus, follow, release, clearFocus, update,
+    controls, focus, follow, release, clearFocus, resetView, update,
     get target() { return controls.target; },
     get isFollowing() { return followGetter != null; },
   };

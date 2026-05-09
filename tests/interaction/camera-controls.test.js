@@ -36,6 +36,21 @@ describe('camera controller', () => {
     expect(ctl.isFollowing).toBe(true);
   });
 
+  it('resetView restores initial camera position and target, and releases', () => {
+    const cam = new PerspectiveCamera();
+    cam.position.set(0, 50, 200);
+    const ctl = createCameraController(cam, document.createElement('canvas'));
+    ctl.follow(() => new Vector3(99, 99, 99));
+    ctl.update(1 / 60);
+    cam.position.set(1, 2, 3); // user dragged the camera somewhere weird
+    ctl.resetView();
+    expect(cam.position.x).toBeCloseTo(0, 5);
+    expect(cam.position.y).toBeCloseTo(50, 5);
+    expect(cam.position.z).toBeCloseTo(200, 5);
+    expect(ctl.target.length()).toBeLessThan(0.001); // back at origin
+    expect(ctl.isFollowing).toBe(false);
+  });
+
   it('clearFocus is an alias for release', () => {
     const cam = new PerspectiveCamera();
     const ctl = createCameraController(cam, document.createElement('canvas'));
