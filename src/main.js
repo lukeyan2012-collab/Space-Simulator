@@ -18,6 +18,7 @@ import { createLoadingOrchestrator } from '@/loader/loading-orchestrator.js';
 import { createModelLoader } from '@/loader/model-loader.js';
 import { createBodyRecord, makePlaceholder } from '@/lod/body-record.js';
 import { createLodRuntime } from '@/lod/lod-runtime.js';
+import { createMassControls } from '@/ui/mass-slider.js';
 
 const canvas = document.getElementById('scene');
 const { scene, camera, renderer } = createScene(canvas, { width: innerWidth, height: innerHeight });
@@ -57,6 +58,21 @@ function spawnFromManifest(spec, position = [0,0,0], velocity = [0,0,0]) {
   return rec;
 }
 
+function removeRecord(id) {
+  const i = records.findIndex(r => r.id === id);
+  if (i >= 0) {
+    const r = records[i];
+    scene.remove(r.object);
+    // best-effort dispose
+    r.object.traverse?.((n) => {
+      n.geometry?.dispose?.();
+      const mats = Array.isArray(n.material) ? n.material : (n.material ? [n.material] : []);
+      for (const m of mats) m.dispose?.();
+    });
+    records.splice(i, 1);
+  }
+}
+
 // Stage 2 demo: Sun + Earth from the manifest. Earth orbits the Sun in the XZ plane (ecliptic).
 const sunSpec = manifest.bodies.find(b => b.id === 'sun');
 const earthSpec = manifest.bodies.find(b => b.id === 'earth');
@@ -80,6 +96,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 
 let selected = null;
 let hoverGrace = null;
+let massControls = null;
 
 createSelectionRaycaster({
   camera, domElement: renderer.domElement,
@@ -89,6 +106,7 @@ createSelectionRaycaster({
     selected = rec;
     if (selected) selected.selected = true;
     if (!selected) props.update(null);
+    massControls?.refreshMassEnabled();
   },
   onHover: (rec, prev) => {
     if (prev) {
@@ -116,6 +134,14 @@ createSidebar({
   manifest,
   onDragStart: (id) => dragDrop.beginDragFromSidebar(id),
   onTapAdd: (id) => dragDrop.armForTapAdd(id),
+});
+
+massControls = createMassControls({
+  getSelected: () => selected,
+  getRecords: () => records,
+  engine, manifest, scene,
+  spawn: spawnFromManifest,
+  removeRecord,
 });
 
 // Double-click a body → camera pins/follows it. Double-click empty space → unpin/release.

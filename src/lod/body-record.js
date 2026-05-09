@@ -20,6 +20,7 @@ export function createBodyRecord(body, mesh, sceneScale) {
     selected: false,
     hovered: false,
     sceneScale,
+    _baseScale: sceneScale,
     boundingSphere: new Sphere(new Vector3(), Math.max(1, sceneScale)),
     _distance: Infinity,
     syncFromEngine(engineState, camera) {

@@ -27,7 +27,10 @@ export function createLodRuntime({ records, modelLoader, scene }) {
       const maxDim = Math.max(size.x, size.y, size.z);
       const targetDiameter = rec.sceneScale * 2;
       const normScale = maxDim > 0 ? targetDiameter / maxDim : 1;
-      newMesh.scale.setScalar(normScale);
+      // preserve the global visual-size multiplier across the LOD swap, if main.js has applied one.
+      const sizeMult = (rec.object.scale.x / (rec._baseScale || 1)) || 1;
+      rec._baseScale = normScale;
+      newMesh.scale.setScalar(normScale * sizeMult);
 
       newMesh.position.copy(rec.object.position);
       newMesh.userData.bodyId = rec.id; // preserve pickability

@@ -43,3 +43,7 @@ canvas#scene { position: fixed; inset: 0; display: block; }
 .hc-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
 .hc-row { display: flex; justify-content: space-between; opacity: 0.7; }
 .hc-desc { margin-top: 6px; opacity: 0.6; font-size: 11px; }
+.mass-controls { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 16px; align-items: center; padding: 8px 14px; background: rgba(15,15,25,0.7); border: 1px solid #2a2a3a; border-radius: 8px; font-size: 11px; z-index: 5; }
+.mass-controls label { display: flex; align-items: center; gap: 8px; }
+.mass-controls input[type=range] { width: 120px; }
+.mc-mass-val { opacity: 0.7; min-width: 48px; text-align: right; }
