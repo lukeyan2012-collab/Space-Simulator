@@ -1,3 +1,0 @@
-[2m7:23:41 AM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [31m[Unhandled error] [1mReferenceError[22m: MeshStandardMaterial is not defined
-[39m > src/main.js?t=1778325821336:27:62
-

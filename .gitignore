@@ -3,6 +3,7 @@ dist/
 .vite/
 .DS_Store
 *.log
+dev_*.txt
 .env
 .env.local
 
