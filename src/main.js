@@ -60,6 +60,12 @@ if (typeof window !== 'undefined' && 'ontouchstart' in window) {
 const engine = createVerletEngine();
 const records = [];
 
+// Hoisted forward declarations referenced by spawnFromManifest / removeRecord BEFORE their
+// real initialization further down. With `let`, accessing the binding before initialization
+// is a TDZ ReferenceError (optional chaining can't catch that), so the binding must exist —
+// initialised to null — before any function that reads it is called.
+let autosave = null;
+
 // Visible-size formula tuned for AU-scale spacing — minimum 1 unit so dwarfs aren't sub-pixel.
 function visibleRadius(spec) {
   return Math.max(1.0, Math.log10(spec.realRadius_m) * 0.5);
@@ -118,7 +124,6 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 let selected = null;
 let hoverGrace = null;
 let massControls = null;
-let autosave = null; // initialized after UI wiring; spawnFromManifest/removeRecord guard with ?.
 
 createSelectionRaycaster({
   camera, domElement: renderer.domElement,
