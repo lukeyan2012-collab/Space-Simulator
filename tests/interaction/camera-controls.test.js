@@ -12,12 +12,36 @@ describe('camera controller', () => {
     expect(ctl.target.distanceTo(new Vector3(100, 0, 0))).toBeLessThan(1);
   });
 
-  it('clearFocus resets target to origin', () => {
+  it('release stops further target updates and leaves target where it was', () => {
     const cam = new PerspectiveCamera();
     const ctl = createCameraController(cam, document.createElement('canvas'));
-    ctl.focus(new Vector3(50, 0, 0));
+    ctl.focus(new Vector3(100, 0, 0));
+    for (let i = 0; i < 60; i++) ctl.update(1 / 60); // converge near (100,0,0)
+    const snapshot = ctl.target.clone();
+    ctl.release();
+    for (let i = 0; i < 120; i++) ctl.update(1 / 60); // should NOT move
+    expect(ctl.target.distanceTo(snapshot)).toBeLessThan(0.01);
+    expect(ctl.isFollowing).toBe(false);
+  });
+
+  it('follow tracks a moving source each frame', () => {
+    const cam = new PerspectiveCamera();
+    const ctl = createCameraController(cam, document.createElement('canvas'));
+    const moving = new Vector3(0, 0, 0);
+    ctl.follow(() => moving);
+    // step the source along x while updating
+    for (let i = 0; i < 30; i++) { moving.x += 1; ctl.update(1 / 60); }
+    // target should be near (30, 0, 0), well above origin
+    expect(ctl.target.x).toBeGreaterThan(20);
+    expect(ctl.isFollowing).toBe(true);
+  });
+
+  it('clearFocus is an alias for release', () => {
+    const cam = new PerspectiveCamera();
+    const ctl = createCameraController(cam, document.createElement('canvas'));
+    ctl.follow(() => new Vector3(10, 0, 0));
+    expect(ctl.isFollowing).toBe(true);
     ctl.clearFocus();
-    for (let i = 0; i < 120; i++) ctl.update(1 / 60);
-    expect(ctl.target.length()).toBeLessThan(1);
+    expect(ctl.isFollowing).toBe(false);
   });
 });

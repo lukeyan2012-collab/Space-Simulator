@@ -7,7 +7,7 @@ import { createVerletEngine } from '@/physics/verlet-engine.js';
 import {
   G, DISTANCE_SCALE, TIME_BASE_SECONDS_PER_REAL_SECOND, MAX_SUBSTEPS_PER_FRAME,
 } from '@/physics/constants.js';
-import { Mesh, SphereGeometry, MeshBasicMaterial } from 'three';
+import { Mesh, SphereGeometry, MeshBasicMaterial, Raycaster, Vector2 } from 'three';
 
 const canvas = document.getElementById('scene');
 const { scene, camera, renderer } = createScene(canvas, { width: innerWidth, height: innerHeight });
@@ -27,7 +27,24 @@ engine.addBody({ id: 'earth', mass: M_EARTH, position: [AU,0,0], velocity: [0, M
 // at 1 AU separation. Stage 2 replaces these with manifest-driven log-scaled placeholders + GLBs.
 const sun = new Mesh(new SphereGeometry(4.0, 32, 32), new MeshBasicMaterial({ color: 0xffaa33 }));
 const earth = new Mesh(new SphereGeometry(2.0, 24, 24), new MeshBasicMaterial({ color: 0x6aa9ff }));
+sun.userData.bodyId = 'sun';
+earth.userData.bodyId = 'earth';
+const pickables = [sun, earth];
 scene.add(sun, earth);
+
+// Click on a body → camera follows it; click empty space → release (free pan with right-click).
+const ray = new Raycaster();
+const ndc = new Vector2();
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return; // left button only
+  const rect = renderer.domElement.getBoundingClientRect();
+  ndc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  ndc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObjects(pickables, false)[0];
+  if (hit) cam.follow(() => hit.object.position);
+  else cam.release();
+});
 
 const slider = createTimeSlider({ initial: 0.5 });
 
@@ -41,7 +58,7 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight, false);
 });
-window.addEventListener('keydown', (e) => { if (e.key === 'Escape') cam.clearFocus(); });
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape') cam.release(); });
 
 let last = performance.now();
 function tick(now) {
