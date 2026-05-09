@@ -1,9 +1,11 @@
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { resolveCandidates } from './alias-map.js';
+import { registerSpecGlossExtension } from './specgloss-extension.js';
 
 export function createModelLoader({ basePath = '/models/', GLTFLoaderImpl = GLTFLoader, manager } = {}) {
   const loader = new GLTFLoaderImpl(manager);
   if (loader.setPath) loader.setPath(basePath);
+  if (typeof loader.register === 'function') registerSpecGlossExtension(loader);
   /** @type {Map<string, Promise<import('three').Object3D|null>>} */
   const inflight = new Map();
   /** @type {Map<string, import('three').Object3D|null>} */
