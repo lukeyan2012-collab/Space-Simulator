@@ -3,6 +3,8 @@ import { createStarfield } from '@/render/starfield.js';
 import { createCameraController } from '@/interaction/camera-controls.js';
 import { createLoadingScreen } from '@/ui/loading-screen.js';
 import { createTimeSlider } from '@/ui/time-slider.js';
+import { createPropertiesPanel } from '@/ui/properties-panel.js';
+import { createSelectionRaycaster } from '@/interaction/raycaster.js';
 import { createVerletEngine } from '@/physics/verlet-engine.js';
 import {
   G, DISTANCE_SCALE, TIME_BASE_SECONDS_PER_REAL_SECOND, MAX_SUBSTEPS_PER_FRAME,
@@ -64,6 +66,24 @@ const lodRuntime = createLodRuntime({ records, modelLoader, scene });
 
 const slider = createTimeSlider({ initial: 0.75 }); // 0.75 → 10× — visible orbit in ~36s
 
+const props = createPropertiesPanel();
+let selected = null;
+
+createSelectionRaycaster({
+  camera, domElement: renderer.domElement,
+  getRecords: () => records,
+  onSelect: (rec) => {
+    if (selected) selected.selected = false;
+    selected = rec;
+    if (selected) selected.selected = true;
+    if (!selected) props.update(null);
+  },
+  onHover: (rec, prev) => {
+    if (prev) prev.hovered = false;
+    if (rec) rec.hovered = true;
+  },
+});
+
 // Double-click a body → camera pins/follows it. Double-click empty space → unpin/release.
 // (Single click does nothing so OrbitControls can drag-rotate without accidentally pinning.)
 const ray = new Raycaster();
@@ -90,7 +110,12 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight, false);
 });
-window.addEventListener('keydown', (e) => { if (e.key === 'Escape') cam.release(); });
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    cam.release();
+    if (selected) { selected.selected = false; selected = null; props.update(null); }
+  }
+});
 
 // Reset View button.
 const resetBtn = document.createElement('button');
@@ -119,6 +144,11 @@ function tick(now) {
     rec.spin(totalSimSec); // axial rotation; scales with the time-slider, pauses at 0
   }
   lodRuntime.tick(camera);
+
+  if (selected) {
+    const s = engine.getState(selected.id);
+    if (s) props.update({ body: selected.body, state: s, lod: selected.currentLod });
+  }
 
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
