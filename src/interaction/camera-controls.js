@@ -14,6 +14,7 @@ export function createCameraController(camera, domElement) {
   let focusTarget = null;     // one-shot lerp to a static point
   let followGetter = null;    // continuous: follow a moving body each frame
   const tmpDest = new Vector3();
+  const tmpDelta = new Vector3();
 
   // snapshot of the initial pose for resetView()
   const initialCameraPos = camera.position.clone();
@@ -35,8 +36,13 @@ export function createCameraController(camera, domElement) {
     if (followGetter) {
       const pos = followGetter();
       if (pos) {
-        tmpDest.copy(pos);
-        controls.target.lerp(tmpDest, Math.min(1, FOCUS_LERP * dt));
+        // Chase-camera: shift the camera by the same delta the body moved this frame, so
+        // the camera-to-body offset (and therefore zoom + viewing angle) stays constant
+        // as the body orbits. User drag/zoom still works because OrbitControls re-derives
+        // its spherical coords from the post-shift camera/target each frame.
+        tmpDelta.subVectors(pos, controls.target);
+        camera.position.add(tmpDelta);
+        controls.target.copy(pos);
       }
     } else if (focusTarget) {
       tmpDest.copy(focusTarget);

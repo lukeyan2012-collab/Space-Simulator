@@ -106,8 +106,9 @@ function tick(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   cam.update(dt);
 
+  let totalSimSec = 0;
   if (!slider.isPaused) {
-    const totalSimSec = slider.multiplier * TIME_BASE_SECONDS_PER_REAL_SECOND * dt;
+    totalSimSec = slider.multiplier * TIME_BASE_SECONDS_PER_REAL_SECOND * dt;
     const subSec = totalSimSec / MAX_SUBSTEPS_PER_FRAME;
     for (let i = 0; i < MAX_SUBSTEPS_PER_FRAME; i++) engine.step(subSec);
   }
@@ -115,6 +116,7 @@ function tick(now) {
   for (const rec of records) {
     const s = engine.getState(rec.id); if (!s) continue;
     rec.syncFromEngine(s, camera);
+    rec.spin(totalSimSec); // axial rotation; scales with the time-slider, pauses at 0
   }
   lodRuntime.tick(camera);
 

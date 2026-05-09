@@ -24,15 +24,22 @@ describe('camera controller', () => {
     expect(ctl.isFollowing).toBe(false);
   });
 
-  it('follow tracks a moving source each frame', () => {
+  it('chase-camera: follow keeps the same camera-to-body offset as the body moves', () => {
     const cam = new PerspectiveCamera();
+    cam.position.set(0, 50, 200);
     const ctl = createCameraController(cam, document.createElement('canvas'));
     const moving = new Vector3(0, 0, 0);
+    const initialOffset = cam.position.clone().sub(moving);
     ctl.follow(() => moving);
-    // step the source along x while updating
+    // step the source along +X
     for (let i = 0; i < 30; i++) { moving.x += 1; ctl.update(1 / 60); }
-    // target should be near (30, 0, 0), well above origin
-    expect(ctl.target.x).toBeGreaterThan(20);
+    // target snaps to body
+    expect(ctl.target.x).toBeCloseTo(30, 4);
+    // camera moved with the body — offset preserved
+    const finalOffset = cam.position.clone().sub(moving);
+    expect(finalOffset.x).toBeCloseTo(initialOffset.x, 1);
+    expect(finalOffset.y).toBeCloseTo(initialOffset.y, 1);
+    expect(finalOffset.z).toBeCloseTo(initialOffset.z, 1);
     expect(ctl.isFollowing).toBe(true);
   });
 

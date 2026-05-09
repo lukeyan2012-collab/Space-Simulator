@@ -23,6 +23,20 @@ describe('body record', () => {
     expect('#' + m.material.color.getHexString()).toBe('#3377ff');
   });
 
+  it('spin rotates the mesh by 2π per rotationPeriod_s; null period is a no-op', () => {
+    const mesh = new Mesh(new SphereGeometry(1, 8, 8), new MeshBasicMaterial());
+    const rec = createBodyRecord({ ...fakeBody, rotationPeriod_s: 100 }, mesh, 1);
+    rec.spin(50); // half a period → π radians
+    expect(mesh.rotation.y).toBeCloseTo(Math.PI, 6);
+    rec.spin(50); // another half → 2π total
+    expect(mesh.rotation.y).toBeCloseTo(Math.PI * 2, 6);
+
+    const noSpin = createBodyRecord({ ...fakeBody, rotationPeriod_s: null }, mesh, 1);
+    const before = mesh.rotation.y;
+    noSpin.spin(99999);
+    expect(mesh.rotation.y).toBe(before);
+  });
+
   it('syncFromEngine updates mesh position, bounding sphere, and distance', () => {
     const mesh = new Mesh(new SphereGeometry(1, 8, 8), new MeshBasicMaterial());
     const rec = createBodyRecord(fakeBody, mesh, 3.4);

@@ -29,5 +29,12 @@ export function createBodyRecord(body, mesh, sceneScale) {
       this.boundingSphere.radius = Math.max(1, this.sceneScale);
       this._distance = this.object.position.distanceTo(camera.position);
     },
+    // Advance axial spin by deltaSimSec simulated seconds. Negative period = retrograde.
+    // Null/undefined period = no spin (e.g. satellites whose mass is too small to define one).
+    spin(deltaSimSec) {
+      const period = this.body.rotationPeriod_s;
+      if (!period || !Number.isFinite(period)) return;
+      this.object.rotation.y += (deltaSimSec / period) * Math.PI * 2;
+    },
   };
 }
