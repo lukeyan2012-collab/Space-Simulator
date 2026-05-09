@@ -19,7 +19,16 @@ export function createModelLoader({ basePath = '/models/', GLTFLoaderImpl = GLTF
     const url = basePath + filename;
     if (missCache.has(url)) return null;
     return await new Promise((resolve) => {
-      loader.load(url, (gltf) => resolve(gltf.scene), undefined, () => { missCache.add(url); resolve(null); });
+      loader.load(
+        url,
+        (gltf) => resolve(gltf.scene),
+        undefined,
+        (err) => {
+          console.error('[model-loader] failed', url, '—', err?.message ?? err, err);
+          missCache.add(url);
+          resolve(null);
+        },
+      );
     });
   }
 
