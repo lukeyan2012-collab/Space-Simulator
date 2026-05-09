@@ -9,7 +9,7 @@ import { registerSpecGlossExtension } from './specgloss-extension.js';
 // unique value so the browser sees a URL it has no cache for.
 const CACHE_BUSTER = (typeof Date !== 'undefined' ? Date.now() : Math.random()).toString(36);
 
-export function createModelLoader({ basePath = '/models/', GLTFLoaderImpl = GLTFLoader, manager } = {}) {
+export function createModelLoader({ basePath = '/models/', GLTFLoaderImpl = GLTFLoader, manager, onMiss = () => {} } = {}) {
   const loader = new GLTFLoaderImpl(manager);
   // NB: do NOT call loader.setPath(basePath). We pass full URLs (already starting with
   // basePath) into loader.load() ourselves, and three.js's resolveURL would re-prepend
@@ -37,6 +37,9 @@ export function createModelLoader({ basePath = '/models/', GLTFLoaderImpl = GLTF
         undefined,
         (err) => {
           console.error('[model-loader] failed', url, '—', err?.message ?? err, err);
+          if (!missCache.has(url)) {
+            try { onMiss(filename); } catch {}
+          }
           missCache.add(url);
           resolve(null);
         },

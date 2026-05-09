@@ -50,3 +50,5 @@ canvas#scene { position: fixed; inset: 0; display: block; }
 .reset-presets { position: fixed; top: 16px; right: 320px; display: flex; gap: 8px; z-index: 5; }
 .reset-presets button, .reset-presets select { background: rgba(15,15,25,0.7); border: 1px solid #2a2a3a; color: #ddd; border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; backdrop-filter: blur(6px); }
 .reset-presets button:hover, .reset-presets select:hover { background: rgba(40,40,60,0.85); }
+.toaster { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; z-index: 50; pointer-events: none; }
+.toast { background: rgba(60,30,30,0.92); border: 1px solid #722; color: #fbb; padding: 8px 12px; border-radius: 6px; font-size: 12px; pointer-events: auto; max-width: 360px; }

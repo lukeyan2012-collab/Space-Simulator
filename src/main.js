@@ -21,7 +21,14 @@ import { createLodRuntime } from '@/lod/lod-runtime.js';
 import { createMassControls } from '@/ui/mass-slider.js';
 import { createResetPresets } from '@/ui/reset-presets.js';
 import { createAutosave } from '@/persistence/autosave.js';
+import { createToaster } from '@/ui/toast.js';
 import { PRESETS } from '@/data/presets.js';
+
+const _testCanvas = document.createElement('canvas');
+if (!_testCanvas.getContext('webgl2')) {
+  document.body.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#f88;font-family:sans-serif;font-size:14px;text-align:center;padding:20px">WebGL2 not available — please update your browser or enable hardware acceleration.</div>`;
+  throw new Error('no webgl2');
+}
 
 const canvas = document.getElementById('scene');
 const { scene, camera, renderer } = createScene(canvas, { width: innerWidth, height: innerHeight });
@@ -39,7 +46,16 @@ const cam = createCameraController(camera, renderer.domElement);
 const loading = createLoadingScreen();
 loading.setProgress(0);
 const orch = createLoadingOrchestrator(loading);
-const modelLoader = createModelLoader({ basePath: '/models/', manager: orch.manager });
+const toaster = createToaster();
+const modelLoader = createModelLoader({
+  basePath: '/models/',
+  manager: orch.manager,
+  onMiss: (filename) => toaster.show(`Couldn't load ${filename} — using placeholder`),
+});
+
+if (typeof window !== 'undefined' && 'ontouchstart' in window) {
+  toaster.show('Touch device: hover cards disabled. Tap a sidebar item then tap canvas to spawn.');
+}
 
 const engine = createVerletEngine();
 const records = [];
