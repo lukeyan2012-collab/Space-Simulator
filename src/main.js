@@ -19,6 +19,9 @@ import { createModelLoader } from '@/loader/model-loader.js';
 import { createBodyRecord, makePlaceholder } from '@/lod/body-record.js';
 import { createLodRuntime } from '@/lod/lod-runtime.js';
 import { createMassControls } from '@/ui/mass-slider.js';
+import { createResetPresets } from '@/ui/reset-presets.js';
+import { createAutosave } from '@/persistence/autosave.js';
+import { PRESETS } from '@/data/presets.js';
 
 const canvas = document.getElementById('scene');
 const { scene, camera, renderer } = createScene(canvas, { width: innerWidth, height: innerHeight });
@@ -55,6 +58,7 @@ function spawnFromManifest(spec, position = [0,0,0], velocity = [0,0,0]) {
   engine.addBody({ id: spec.id, mass: spec.realMass_kg, position, velocity });
   const rec = createBodyRecord(spec, placeholder, r);
   records.push(rec);
+  autosave?.markDirty();
   return rec;
 }
 
@@ -70,6 +74,7 @@ function removeRecord(id) {
       for (const m of mats) m.dispose?.();
     });
     records.splice(i, 1);
+    autosave?.markDirty();
   }
 }
 
@@ -97,6 +102,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 let selected = null;
 let hoverGrace = null;
 let massControls = null;
+let autosave = null; // initialized after UI wiring; spawnFromManifest/removeRecord guard with ?.
 
 createSelectionRaycaster({
   camera, domElement: renderer.domElement,
@@ -143,6 +149,55 @@ massControls = createMassControls({
   spawn: spawnFromManifest,
   removeRecord,
 });
+
+function clearAll() {
+  // Iterate a copy because removeRecord splices in-place.
+  for (const r of [...records]) {
+    engine.removeBody(r.id);
+    removeRecord(r.id);
+  }
+  records.length = 0;
+  engine.clear();
+  selected = null;
+  props.update(null);
+  cam.release();
+  massControls?.refreshMassEnabled?.();
+}
+
+function loadPreset(name) {
+  clearAll();
+  const entries = (PRESETS[name] || (() => []))();
+  for (const e of entries) {
+    const spec = manifest.bodies.find(b => b.id === e.id);
+    if (spec) spawnFromManifest(spec, e.position, e.velocity);
+  }
+}
+
+createResetPresets({ onReset: clearAll, onPreset: loadPreset });
+
+autosave = createAutosave({
+  key: 'space-sim:sandbox',
+  getSnapshot: () => records.map(r => {
+    const s = engine.getState(r.id);
+    return s ? { id: r.id, mass: s.mass, position: s.position, velocity: s.velocity } : null;
+  }).filter(Boolean),
+  debounceMs: 5000,
+});
+
+// Restore previous session if one exists.
+const _prev = autosave.load();
+if (_prev && Array.isArray(_prev) && _prev.length > 0
+    && (typeof window === 'undefined' || window.confirm('Restore previous session?'))) {
+  clearAll();
+  for (const s of _prev) {
+    const spec = manifest.bodies.find(b => b.id === s.id);
+    if (spec) spawnFromManifest(spec, s.position, s.velocity);
+    if (spec && s.mass != null) engine.setState(s.id, { mass: s.mass });
+  }
+} else if (_prev) {
+  // user declined or snapshot was empty — discard stale data
+  autosave.clear();
+}
 
 // Double-click a body → camera pins/follows it. Double-click empty space → unpin/release.
 // (Single click does nothing so OrbitControls can drag-rotate without accidentally pinning.)
