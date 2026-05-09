@@ -11,7 +11,9 @@ const CACHE_BUSTER = (typeof Date !== 'undefined' ? Date.now() : Math.random()).
 
 export function createModelLoader({ basePath = '/models/', GLTFLoaderImpl = GLTFLoader, manager } = {}) {
   const loader = new GLTFLoaderImpl(manager);
-  if (loader.setPath) loader.setPath(basePath);
+  // NB: do NOT call loader.setPath(basePath). We pass full URLs (already starting with
+  // basePath) into loader.load() ourselves, and three.js's resolveURL would re-prepend
+  // setPath because the URL doesn't start with http:// or //, producing /models//models/foo.glb.
   if (typeof loader.register === 'function') registerSpecGlossExtension(loader);
   /** @type {Map<string, Promise<import('three').Object3D|null>>} */
   const inflight = new Map();
