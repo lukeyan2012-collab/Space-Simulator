@@ -23,6 +23,8 @@ import { createResetPresets } from '@/ui/reset-presets.js';
 import { createAutosave } from '@/persistence/autosave.js';
 import { createToaster } from '@/ui/toast.js';
 import { PRESETS } from '@/data/presets.js';
+import { createSpacetimeGrid } from '@/render/spacetime-grid.js';
+import { createBackgroundSelector } from '@/ui/background-selector.js';
 
 const _testCanvas = document.createElement('canvas');
 if (!_testCanvas.getContext('webgl2')) {
@@ -32,7 +34,20 @@ if (!_testCanvas.getContext('webgl2')) {
 
 const canvas = document.getElementById('scene');
 const { scene, camera, renderer } = createScene(canvas, { width: innerWidth, height: innerHeight });
-scene.add(createStarfield());
+const starfield = createStarfield();
+scene.add(starfield);
+
+// Background-mode plane (gridlines / spacetime warp). Hidden by default; toggled by selector.
+const spacetimeGrid = createSpacetimeGrid();
+scene.add(spacetimeGrid.mesh);
+
+createBackgroundSelector({
+  initial: 'stars',
+  onChange: (mode) => {
+    starfield.visible = (mode === 'stars');
+    spacetimeGrid.setMode(mode); // 'grid' | 'warp' shows the plane; 'stars' hides it
+  },
+});
 
 // Lights so MeshStandardMaterial-based GLBs render properly. PointLight at the Sun's position
 // gives a sun-lit look (decay=0 so its full intensity reaches Earth at 1 AU); ambient fills the
@@ -280,6 +295,9 @@ function tick(now) {
     rec.spin(totalSimSec); // axial rotation; scales with the time-slider, pauses at 0
   }
   lodRuntime.tick(camera);
+
+  // Keep the spacetime-grid plane in sync with body positions/masses (cheap; uniforms only).
+  if (spacetimeGrid.mesh.visible) spacetimeGrid.updateBodies(records);
 
   if (selected) {
     const s = engine.getState(selected.id);
