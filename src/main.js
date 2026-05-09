@@ -48,7 +48,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   else cam.release();
 });
 
-const slider = createTimeSlider({ initial: 0.5 });
+const slider = createTimeSlider({ initial: 0.75 }); // 0.75 → 10× — visible orbit in ~36s
 
 function syncMesh(mesh, id) {
   const s = engine.getState(id); if (!s) return;
@@ -77,7 +77,7 @@ function tick(now) {
   cam.update(dt);
 
   if (!slider.isPaused) {
-    const totalSimSec = slider.value * TIME_BASE_SECONDS_PER_REAL_SECOND * dt;
+    const totalSimSec = slider.multiplier * TIME_BASE_SECONDS_PER_REAL_SECOND * dt;
     const subSec = totalSimSec / MAX_SUBSTEPS_PER_FRAME;
     for (let i = 0; i < MAX_SUBSTEPS_PER_FRAME; i++) engine.step(subSec);
   }
