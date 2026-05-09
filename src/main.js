@@ -64,11 +64,11 @@ const lodRuntime = createLodRuntime({ records, modelLoader, scene });
 
 const slider = createTimeSlider({ initial: 0.75 }); // 0.75 → 10× — visible orbit in ~36s
 
-// Click on a body → camera follows it; click empty space → release.
+// Double-click a body → camera pins/follows it. Double-click empty space → unpin/release.
+// (Single click does nothing so OrbitControls can drag-rotate without accidentally pinning.)
 const ray = new Raycaster();
 const ndc = new Vector2();
-renderer.domElement.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0) return;
+renderer.domElement.addEventListener('dblclick', (e) => {
   const rect = renderer.domElement.getBoundingClientRect();
   ndc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
   ndc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
