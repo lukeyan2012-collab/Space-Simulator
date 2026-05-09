@@ -3,3 +3,12 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: 
 canvas#scene { position: fixed; inset: 0; display: block; }
 #ui-root { position: fixed; inset: 0; pointer-events: none; }
 #ui-root > * { pointer-events: auto; }
+#loading-screen { position: fixed; inset: 0; background: #000; display: flex; align-items: center; justify-content: center; z-index: 9999; transition: opacity 600ms ease; }
+#loading-screen.ls-fading { opacity: 0; }
+#loading-screen.ls-hidden { display: none; }
+.ls-inner { width: min(420px, 80vw); text-align: center; }
+.ls-title { font-size: 22px; letter-spacing: 0.2em; margin-bottom: 24px; opacity: 0.85; }
+.ls-bar { height: 4px; background: #1a1a22; border-radius: 2px; overflow: hidden; }
+.ls-bar-fill { height: 100%; width: 0; background: linear-gradient(90deg,#4af,#a4f); transition: width 200ms ease; }
+.ls-status { margin-top: 12px; font-size: 12px; opacity: 0.6; letter-spacing: 0.1em; }
+.ls-error { color: #f66; font-size: 13px; }
