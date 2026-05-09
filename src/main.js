@@ -7,7 +7,7 @@ import { createVerletEngine } from '@/physics/verlet-engine.js';
 import {
   G, DISTANCE_SCALE, TIME_BASE_SECONDS_PER_REAL_SECOND, MAX_SUBSTEPS_PER_FRAME,
 } from '@/physics/constants.js';
-import { Raycaster, Vector2 } from 'three';
+import { Raycaster, Vector2, AmbientLight, PointLight } from 'three';
 import manifest from '@/data/bodies.json';
 import { createLoadingOrchestrator } from '@/loader/loading-orchestrator.js';
 import { createModelLoader } from '@/loader/model-loader.js';
@@ -17,6 +17,14 @@ import { createLodRuntime } from '@/lod/lod-runtime.js';
 const canvas = document.getElementById('scene');
 const { scene, camera, renderer } = createScene(canvas, { width: innerWidth, height: innerHeight });
 scene.add(createStarfield());
+
+// Lights so MeshStandardMaterial-based GLBs render properly. PointLight at the Sun's position
+// gives a sun-lit look (decay=0 so its full intensity reaches Earth at 1 AU); ambient fills the
+// dark side so it's not pitch black. Stage 4 will replace this with selective bloom + emissive
+// star material when procedural shaders come in.
+scene.add(new AmbientLight(0xffffff, 0.4));
+scene.add(new PointLight(0xffffff, 1.5, 0, 0));
+
 const cam = createCameraController(camera, renderer.domElement);
 
 const loading = createLoadingScreen();
