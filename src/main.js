@@ -6,6 +6,8 @@ import { createTimeSlider } from '@/ui/time-slider.js';
 import { createPropertiesPanel } from '@/ui/properties-panel.js';
 import { createHoverCard } from '@/ui/hover-card.js';
 import { createSelectionRaycaster } from '@/interaction/raycaster.js';
+import { createSidebar } from '@/ui/sidebar.js';
+import { createDragDrop } from '@/interaction/drag-drop.js';
 import { createVerletEngine } from '@/physics/verlet-engine.js';
 import {
   G, DISTANCE_SCALE, TIME_BASE_SECONDS_PER_REAL_SECOND, MAX_SUBSTEPS_PER_FRAME,
@@ -102,6 +104,18 @@ createSelectionRaycaster({
       hover.hide();
     }
   },
+});
+
+const dragDrop = createDragDrop({
+  scene, camera, domElement: renderer.domElement, manifest,
+  getRecords: () => records,
+  getCamTarget: () => cam.target,
+  spawn: (body, pos, vel) => spawnFromManifest(body, pos, vel),
+});
+createSidebar({
+  manifest,
+  onDragStart: (id) => dragDrop.beginDragFromSidebar(id),
+  onTapAdd: (id) => dragDrop.armForTapAdd(id),
 });
 
 // Double-click a body → camera pins/follows it. Double-click empty space → unpin/release.
