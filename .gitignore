@@ -5,3 +5,7 @@ dist/
 *.log
 .env
 .env.local
+
+# Junction to ../3D models — created locally by setup script (see scripts/setup-models.cjs).
+# The junction itself is not committed; the source assets live in /3D models/.
+public/models/
