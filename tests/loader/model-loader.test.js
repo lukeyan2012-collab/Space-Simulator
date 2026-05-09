@@ -3,12 +3,14 @@ import { Object3D } from 'three';
 import { createModelLoader } from '@/loader/model-loader.js';
 
 function makeFakeGLTFLoader(map) {
-  // map: { url -> Object3D | 'fail' }
+  // map: { url -> Object3D | 'fail' }. Strip query string before lookup so the cache-buster
+  // (?v=...) appended by createModelLoader doesn't break tests.
   return class {
     setPath() { return this; }
     load(url, onLoad, _onProgress, onError) {
-      const v = map[url];
-      if (v === 'fail' || v === undefined) onError(new Error('404 ' + url));
+      const cleanUrl = String(url).split('?')[0];
+      const v = map[cleanUrl];
+      if (v === 'fail' || v === undefined) onError(new Error('404 ' + cleanUrl));
       else onLoad({ scene: v });
     }
   };
@@ -40,7 +42,7 @@ describe('model loader', () => {
       setPath() { return this; }
       load(url, onLoad, _o, onError) {
         calls++;
-        if (url === '/models/vesta_1k.glb') onLoad({ scene: obj });
+        if (String(url).split('?')[0] === '/models/vesta_1k.glb') onLoad({ scene: obj });
         else onError(new Error('404'));
       }
     }

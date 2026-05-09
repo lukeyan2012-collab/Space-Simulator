@@ -2,6 +2,13 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { resolveCandidates } from './alias-map.js';
 import { registerSpecGlossExtension } from './specgloss-extension.js';
 
+// Per-module-load cache buster: prevents stale browser HTTP cache entries from being
+// reused across page reloads (we hit a real bug where Vite served HTML for /models/* via
+// the publicDir middleware, the browser cached that HTML, and even after fixing the server
+// the cached HTML kept getting served as 304 Not Modified). Each fresh page load gets a
+// unique value so the browser sees a URL it has no cache for.
+const CACHE_BUSTER = (typeof Date !== 'undefined' ? Date.now() : Math.random()).toString(36);
+
 export function createModelLoader({ basePath = '/models/', GLTFLoaderImpl = GLTFLoader, manager } = {}) {
   const loader = new GLTFLoaderImpl(manager);
   if (loader.setPath) loader.setPath(basePath);
@@ -18,9 +25,10 @@ export function createModelLoader({ basePath = '/models/', GLTFLoaderImpl = GLTF
   async function tryLoadOne(filename) {
     const url = basePath + filename;
     if (missCache.has(url)) return null;
+    const fetchUrl = url + (url.includes('?') ? '&' : '?') + 'v=' + CACHE_BUSTER;
     return await new Promise((resolve) => {
       loader.load(
-        url,
+        fetchUrl,
         (gltf) => resolve(gltf.scene),
         undefined,
         (err) => {
