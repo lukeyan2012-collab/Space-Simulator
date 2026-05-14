@@ -3,7 +3,9 @@ dist/
 .vite/
 .DS_Store
 *.log
+*.err
 dev_*.txt
+temp_*
 .env
 .env.local
 
