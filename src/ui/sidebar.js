@@ -1,8 +1,8 @@
 const CATEGORIES = ['Planets','Moons','Stars','Star Remnants & Nebulae','Asteroids','Satellites'];
 
-// Horizontal category strip (scrollable by drag / wheel). Clicking a category expands a
-// dropdown listing its bodies; clicking the active category again collapses. A search box
-// across the strip filters across ALL categories regardless of which is active.
+// Vertical sidebar widget with the categories flow-wrapped as pills inside it. Clicking a
+// category expands its body list; clicking the active category again collapses. The search
+// box filters across ALL categories regardless of which is active.
 export function createSidebar({ manifest, onDragStart = () => {}, onTapAdd = () => {} }) {
   const root = document.createElement('aside');
   root.className = 'sidebar';
@@ -96,30 +96,6 @@ export function createSidebar({ manifest, onDragStart = () => {}, onTapAdd = () 
     buildItems((b) => b.displayName.toLowerCase().includes(q));
     itemsPane.hidden = false;
   });
-
-  // Drag-to-scroll on the category strip (anywhere except a button).
-  let dragScroll = null;
-  cats.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('button')) return;
-    dragScroll = { startX: e.clientX, startScroll: cats.scrollLeft };
-    cats.classList.add('sb-cats-grabbing');
-  });
-  window.addEventListener('pointermove', (e) => {
-    if (!dragScroll) return;
-    cats.scrollLeft = dragScroll.startScroll - (e.clientX - dragScroll.startX);
-  });
-  window.addEventListener('pointerup', () => {
-    if (!dragScroll) return;
-    dragScroll = null;
-    cats.classList.remove('sb-cats-grabbing');
-  });
-
-  // Wheel → horizontal scroll on the strip (vertical wheel deltas are translated).
-  cats.addEventListener('wheel', (e) => {
-    if (e.deltaY === 0) return;
-    e.preventDefault();
-    cats.scrollLeft += e.deltaY;
-  }, { passive: false });
 
   return { root };
 }
