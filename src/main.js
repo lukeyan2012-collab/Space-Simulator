@@ -18,7 +18,9 @@ import { createLoadingOrchestrator } from '@/loader/loading-orchestrator.js';
 import { createModelLoader } from '@/loader/model-loader.js';
 import { createBodyRecord, makePlaceholder } from '@/lod/body-record.js';
 import { createLodRuntime } from '@/lod/lod-runtime.js';
-import { createMassControls } from '@/ui/mass-slider.js';
+import { chooseRemnant, triggerSupernova } from '@/fx/supernova.js';
+import { createDragResize } from '@/interaction/drag-resize.js';
+import { findFirstCollision, resolveCollision } from '@/physics/collisions.js';
 import { createResetPresets } from '@/ui/reset-presets.js';
 import { createAutosave } from '@/persistence/autosave.js';
 import { createToaster } from '@/ui/toast.js';
@@ -81,9 +83,18 @@ const records = [];
 // initialised to null — before any function that reads it is called.
 let autosave = null;
 
-// Visible-size formula tuned for AU-scale spacing — minimum 1 unit so dwarfs aren't sub-pixel.
+// Visible-size formula. Power-law on real radius (anchored to Earth = 3 units) preserves the
+// real *relative* sizes — Sun ~17, Jupiter ~7.5, Earth/Venus ~3, Mars/Mercury ~2, Moon ~1.8.
+// A floor keeps satellites / tiny asteroids visible. Showing the real 1:109 Sun:Earth ratio
+// would make planets sub-pixel; the 0.38 exponent compresses the dynamic range while keeping
+// the ordering correct (gas giants > rocky planets > moons > asteroids > satellites).
+const EARTH_RENDER_R = 3.0;
+const EARTH_REAL_R_M = 6.371e6;
+const RADIUS_EXP = 0.38;
+const MIN_RENDER_R = 0.6;
 function visibleRadius(spec) {
-  return Math.max(1.0, Math.log10(spec.realRadius_m) * 0.5);
+  const r = Math.max(1e-9, (spec.realRadius_m ?? 0) / EARTH_REAL_R_M);
+  return Math.max(MIN_RENDER_R, EARTH_RENDER_R * Math.pow(r, RADIUS_EXP));
 }
 
 function spawnFromManifest(spec, position = [0,0,0], velocity = [0,0,0]) {
@@ -125,7 +136,7 @@ spawnFromManifest(earthSpec, [AU,0,0], [0, 0, -v]);
 
 const lodRuntime = createLodRuntime({ records, modelLoader, scene });
 
-const slider = createTimeSlider({ initial: 0.75 }); // 0.75 → 10× — visible orbit in ~36s
+const slider = createTimeSlider({ initial: 0.5 }); // 0.5 → 1× real-time
 
 const props = createPropertiesPanel();
 
@@ -138,7 +149,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 
 let selected = null;
 let hoverGrace = null;
-let massControls = null;
+let followedId = null;     // id of the body the camera is currently following (for cleanup on remove)
 
 createSelectionRaycaster({
   camera, domElement: renderer.domElement,
@@ -148,7 +159,6 @@ createSelectionRaycaster({
     selected = rec;
     if (selected) selected.selected = true;
     if (!selected) props.update(null);
-    massControls?.refreshMassEnabled();
   },
   onHover: (rec, prev) => {
     if (prev) {
@@ -178,26 +188,53 @@ createSidebar({
   onTapAdd: (id) => dragDrop.armForTapAdd(id),
 });
 
-massControls = createMassControls({
-  getSelected: () => selected,
+// Click + drag a body to resize it (and scale its mass by r³). Stars going past 8 M☉ trigger
+// the supernova chain automatically (no separate slider/dialog now that mass-controls is gone).
+createDragResize({
+  camera, domElement: renderer.domElement, cameraControls: cam,
   getRecords: () => records,
-  engine, manifest, scene,
-  spawn: spawnFromManifest,
-  removeRecord,
+  engine,
+  onSelect: (rec) => {
+    if (selected) selected.selected = false;
+    selected = rec;
+    if (selected) selected.selected = true;
+  },
+  onSupernova: (rec, newMass) => goSupernova(rec, newMass),
 });
 
-function clearAll() {
-  // Iterate a copy because removeRecord splices in-place.
-  for (const r of [...records]) {
-    engine.removeBody(r.id);
-    removeRecord(r.id);
+function goSupernova(rec, newMass) {
+  const remnantId = chooseRemnant(newMass * 0.5); // half mass shed in collapse
+  const state = engine.getState(rec.id);
+  if (!state) return;
+  triggerSupernova({ scene, position: state.position });
+  destroyBody(rec.id);
+  const remnantSpec = manifest.bodies.find(b => b.id === remnantId);
+  if (remnantSpec) spawnFromManifest(remnantSpec, state.position, state.velocity);
+}
+
+// Remove a body from both engine + scene, plus clear any UI/camera state referencing it.
+function destroyBody(id) {
+  if (selected?.id === id) {
+    selected.selected = false;
+    selected = null;
+    props.update(null);
   }
+  if (followedId === id) {
+    followedId = null;
+    cam.release();
+  }
+  engine.removeBody(id);
+  removeRecord(id);
+}
+
+function clearAll() {
+  for (const r of [...records]) destroyBody(r.id);
   records.length = 0;
   engine.clear();
   selected = null;
+  followedId = null;
   props.update(null);
   cam.release();
-  massControls?.refreshMassEnabled?.();
 }
 
 function loadPreset(name) {
@@ -247,13 +284,13 @@ renderer.domElement.addEventListener('dblclick', (e) => {
   // pickables computed from current records — supports LOD swaps
   const pickables = records.map(r => r.object);
   const hits = ray.intersectObjects(pickables, true);
-  if (!hits.length) { cam.release(); return; }
+  if (!hits.length) { cam.release(); followedId = null; return; }
   // climb up to the record's root object so follow tracks the swap-replaced mesh
   let n = hits[0].object;
   while (n.parent && !records.some(r => r.object === n)) n = n.parent;
   const rec = records.find(r => r.object === n);
-  if (rec) cam.follow(() => rec.object.position);
-  else cam.release();
+  if (rec) { cam.follow(() => rec.object.position); followedId = rec.id; }
+  else { cam.release(); followedId = null; }
 });
 
 window.addEventListener('resize', () => {
@@ -264,6 +301,7 @@ window.addEventListener('resize', () => {
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     cam.release();
+    followedId = null;
     if (selected) { selected.selected = false; selected = null; props.update(null); }
   }
 });
@@ -294,6 +332,14 @@ function tick(now) {
     rec.syncFromEngine(s, camera);
     rec.spin(totalSimSec); // axial rotation; scales with the time-slider, pauses at 0
   }
+
+  // Resolve at most one collision per frame; the next frame will catch any cascade.
+  const pair = findFirstCollision(records);
+  if (pair) {
+    const { destroy } = resolveCollision(pair[0], pair[1]);
+    for (const r of destroy) destroyBody(r.id);
+  }
+
   lodRuntime.tick(camera);
 
   // Keep the spacetime-grid plane in sync with body positions/masses (cheap; uniforms only).
