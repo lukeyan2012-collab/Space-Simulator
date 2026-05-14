@@ -1,3 +1,5 @@
+import { fmtNum } from '@/util/format.js';
+
 const CARD_OFFSET = 16;
 
 export function createHoverCard({ delay = 120, isTouch } = {}) {
@@ -25,8 +27,8 @@ export function createHoverCard({ delay = 120, isTouch } = {}) {
       const radius = body.realRadius_m ?? 0;
       e.innerHTML = `
         <div class="hc-name">${body.displayName ?? '?'}</div>
-        <div class="hc-row"><span>Mass</span><span>${mass.toExponential(2)} kg</span></div>
-        <div class="hc-row"><span>Radius</span><span>${radius.toExponential(2)} m</span></div>
+        <div class="hc-row"><span>Mass</span><span>${fmtNum(mass)} kg</span></div>
+        <div class="hc-row"><span>Radius</span><span>${fmtNum(radius)} m</span></div>
         <div class="hc-desc">${body.description ?? ''}</div>`;
       const x = Math.min((window.innerWidth || 800) - 280, clientX + CARD_OFFSET);
       const y = Math.min((window.innerHeight || 600) - 120, clientY + CARD_OFFSET);

@@ -1,4 +1,4 @@
-function fmt(n) { return Math.abs(n) >= 1e4 || (n !== 0 && Math.abs(n) < 1e-2) ? n.toExponential(3) : n.toFixed(3); }
+import { fmtNum } from '@/util/format.js';
 
 export function createPropertiesPanel() {
   const root = document.createElement('aside');
@@ -18,9 +18,9 @@ export function createPropertiesPanel() {
       <h3 class="props-name">${body.displayName}</h3>
       <p class="props-desc">${body.description ?? ''}</p>
       <dl>
-        <dt>Mass</dt><dd>${fmt(state.mass)} kg</dd>
-        <dt>Velocity</dt><dd>(${fmt(v[0])}, ${fmt(v[1])}, ${fmt(v[2])}) m/s</dd>
-        <dt>Speed</dt><dd>${fmt(Math.hypot(v[0],v[1],v[2]))} m/s</dd>
+        <dt>Mass</dt><dd>${fmtNum(state.mass)} kg</dd>
+        <dt>Velocity</dt><dd>(${fmtNum(v[0])}, ${fmtNum(v[1])}, ${fmtNum(v[2])}) m/s</dd>
+        <dt>Speed</dt><dd>${fmtNum(Math.hypot(v[0],v[1],v[2]))} m/s</dd>
         <dt class="props-lod-label">LOD</dt><dd class="props-lod">${lod}</dd>
       </dl>`;
   }
