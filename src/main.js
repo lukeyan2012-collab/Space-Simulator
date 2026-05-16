@@ -12,7 +12,14 @@ import { createVerletEngine } from '@/physics/verlet-engine.js';
 import {
   G, DISTANCE_SCALE, TIME_BASE_SECONDS_PER_REAL_SECOND, MAX_SUBSTEPS_PER_FRAME,
 } from '@/physics/constants.js';
-import { Raycaster, Vector2, Vector3, AmbientLight, PointLight } from 'three';
+import { Raycaster, Vector2, Vector3, AmbientLight, PointLight, Mesh, SphereGeometry } from 'three';
+import { createStarMaterial } from '@/shaders/star-material.js';
+import { createNebulaMaterial } from '@/shaders/nebula-material.js';
+import { createBlackHoleMaterial } from '@/shaders/black-hole-material.js';
+import { attachSaturnRings } from '@/overlays/saturn-rings.js';
+import { attachEarthClouds } from '@/overlays/earth-clouds.js';
+import { createSelectiveBloom, BLOOM_LAYER } from '@/render/selective-bloom.js';
+import { createLensingPass } from '@/render/lensing-pass.js';
 import manifest from '@/data/bodies.json';
 import { createLoadingOrchestrator } from '@/loader/loading-orchestrator.js';
 import { createModelLoader } from '@/loader/model-loader.js';
@@ -88,14 +95,52 @@ function visibleRadius(spec) {
   return Math.max(MIN_RENDER_R, EARTH_RENDER_R * Math.pow(r, RADIUS_EXP));
 }
 
+// Materials that need uTime updated every frame (stars, nebulae, cloud overlays).
+const animatedMaterials = [];
+
+function makeBodyMesh(spec) {
+  // Procedural bodies get their specialized shader straight away; the LOD runtime knows to
+  // skip the GLB swap for them.
+  if (spec.procedural === 'star') {
+    const mat = createStarMaterial({ temperature_K: spec.temperature_K });
+    animatedMaterials.push(mat);
+    const m = new Mesh(new SphereGeometry(1, 64, 64), mat);
+    m.layers.enable(BLOOM_LAYER); // stars glow via the selective-bloom pass
+    return m;
+  }
+  if (spec.procedural === 'nebula') {
+    const mat = createNebulaMaterial();
+    animatedMaterials.push(mat);
+    return new Mesh(new SphereGeometry(1, 48, 48), mat);
+  }
+  if (spec.procedural === 'black_hole') {
+    return new Mesh(new SphereGeometry(1, 32, 32), createBlackHoleMaterial());
+  }
+  // Asset-backed bodies start as a colored placeholder; LOD runtime swaps in the GLB.
+  return makePlaceholder(spec);
+}
+
 function spawnFromManifest(spec, position = [0,0,0], velocity = [0,0,0]) {
-  const placeholder = makePlaceholder(spec);
+  const mesh = makeBodyMesh(spec);
   const r = visibleRadius(spec);
-  placeholder.scale.setScalar(r);
-  placeholder.userData.bodyId = spec.id;
-  scene.add(placeholder);
+  mesh.scale.setScalar(r);
+  mesh.userData.bodyId = spec.id;
+  scene.add(mesh);
   engine.addBody({ id: spec.id, mass: spec.realMass_kg, position, velocity });
-  const rec = createBodyRecord(spec, placeholder, r);
+  const rec = createBodyRecord(spec, mesh, r);
+  rec.overlays = [];
+
+  // Procedural overlays (rings/clouds) — children of the body's mesh so they inherit
+  // position/scale/spin. The LOD runtime re-attaches them when an asset GLB swaps in.
+  if (spec.overlay === 'rings') {
+    rec.overlays.push(attachSaturnRings(mesh));
+  }
+  if (spec.overlay === 'clouds') {
+    const cloud = attachEarthClouds(mesh);
+    rec.overlays.push(cloud);
+    if (cloud.material.uniforms?.uTime) animatedMaterials.push(cloud.material);
+  }
+
   records.push(rec);
   autosave?.markDirty();
   return rec;
@@ -344,6 +389,20 @@ function updateEditHalo(rec) {
   editHalo.style.display = 'block';
 }
 
+// Stage 4 postprocessing pipeline:
+//   - Selective bloom (only the BLOOM_LAYER renders into the bloom pass; stars glow, planets don't)
+//   - Lensing pass (screen-space UV warp around any black-hole bodies; runs after bloom mix)
+const lensing = createLensingPass({
+  camera,
+  getBlackHoles: () => records.filter(r => r.body?.procedural === 'black_hole'),
+});
+const composer = createSelectiveBloom({ renderer, scene, camera, extraPass: lensing.pass });
+
+// Resize: scene's existing handler updates the renderer; also resize the composer's targets.
+window.addEventListener('resize', () => {
+  composer.setSize(innerWidth, innerHeight);
+});
+
 let last = performance.now();
 function tick(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
@@ -364,6 +423,13 @@ function tick(now) {
 
   lodRuntime.tick(camera);
 
+  // Update animated shader uniforms (uTime) for stars / nebulae / clouds — real time, not
+  // sim time, so the visuals stay alive even when the simulation is paused.
+  const realT = now / 1000;
+  for (const m of animatedMaterials) {
+    if (m.uniforms?.uTime) m.uniforms.uTime.value = realT;
+  }
+
   // Edit-mode HTML halo: project the body's bounding sphere to screen space, draw a blue
   // circle around it (like a Google-Slides selection border).
   if (editingId) {
@@ -379,7 +445,10 @@ function tick(now) {
     if (s) props.update({ body: selected.body, state: s, lod: selected.currentLod });
   }
 
-  renderer.render(scene, camera);
+  // Update lensing uniforms with current black-hole screen positions, then render via the
+  // selective-bloom composer (which also runs the lensing pass at the end).
+  lensing.update();
+  composer.render();
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);

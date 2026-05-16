@@ -34,11 +34,20 @@ export function createLodRuntime({ records, modelLoader, scene }) {
 
       newMesh.position.copy(rec.object.position);
       newMesh.userData.bodyId = rec.id; // preserve pickability
+
+      // Detach any procedural overlays (rings/clouds) before disposing the old mesh, then
+      // re-attach them as children of the new one so they ride along through LOD changes.
+      const overlays = (rec.overlays || []).slice();
+      for (const ov of overlays) rec.object.remove(ov);
+
       scene.add(newMesh);
       scene.remove(rec.object);
       modelLoader.dispose(rec.object);
       rec.object = newMesh;
       rec.currentLod = target;
+
+      for (const ov of overlays) newMesh.add(ov);
+      rec.overlays = overlays;
     } finally {
       inflightSwap.delete(rec.id);
     }
