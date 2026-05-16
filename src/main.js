@@ -274,11 +274,13 @@ function trapBody(rec, absorber) {
   if (followedId === rec.id) { cam.release(); followedId = null; sizeSlider.hide(); }
 }
 
-// Capture distance multipliers. Black holes have a much wider effective "event horizon" than
-// the rendered mesh — once you cross it, nothing can escape (we override velocity to zero
-// and animate the body to the center over 3 seconds).
-const STAR_CAPTURE_MULT = 1.4;
-const BH_CAPTURE_MULT   = 3.5;
+// Capture distance multipliers. The verlet integrator already does real Newtonian gravity,
+// so most flybys naturally slingshot (high tangential velocity) or spiral in (low energy).
+// Capture only happens when the body literally crosses the absorber's mesh boundary — once
+// past that point we hijack motion and animate the body to the center over 3 seconds, then
+// despawn it. A body with enough velocity at periapsis can still escape — gravity decides.
+const STAR_CAPTURE_MULT = 1.0;
+const BH_CAPTURE_MULT   = 1.0;
 
 // Scan for non-absorber bodies overlapping any absorber and start the trap animation.
 function checkAbsorptions() {
