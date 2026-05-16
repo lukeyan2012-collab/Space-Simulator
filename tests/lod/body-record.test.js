@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Mesh, SphereGeometry, MeshBasicMaterial, PerspectiveCamera } from 'three';
+import { Mesh, SphereGeometry, MeshBasicMaterial, PerspectiveCamera, Vector3 } from 'three';
 import { makePlaceholder, createBodyRecord } from '@/lod/body-record.js';
 
 const fakeBody = {
@@ -26,15 +26,17 @@ describe('body record', () => {
   it('spin rotates the mesh by 2π per rotationPeriod_s; null period is a no-op', () => {
     const mesh = new Mesh(new SphereGeometry(1, 8, 8), new MeshBasicMaterial());
     const rec = createBodyRecord({ ...fakeBody, rotationPeriod_s: 100 }, mesh, 1);
-    rec.spin(50); // half a period → π radians
-    expect(mesh.rotation.y).toBeCloseTo(Math.PI, 6);
-    rec.spin(50); // another half → 2π total
-    expect(mesh.rotation.y).toBeCloseTo(Math.PI * 2, 6);
+    // Verify rotation via a probe vector — Euler.y reads can hit gimbal singularities at π.
+    rec.spin(25); // quarter period → π/2 around local Y
+    const probe = new Vector3(1, 0, 0).applyQuaternion(mesh.quaternion);
+    expect(probe.z).toBeCloseTo(-1, 5);   // +X → -Z after π/2 around Y
+    expect(probe.x).toBeCloseTo(0, 5);
 
-    const noSpin = createBodyRecord({ ...fakeBody, rotationPeriod_s: null }, mesh, 1);
-    const before = mesh.rotation.y;
+    const noSpinMesh = new Mesh(new SphereGeometry(1, 8, 8), new MeshBasicMaterial());
+    const noSpin = createBodyRecord({ ...fakeBody, rotationPeriod_s: null }, noSpinMesh, 1);
+    const qBefore = noSpinMesh.quaternion.clone();
     noSpin.spin(99999);
-    expect(mesh.rotation.y).toBe(before);
+    expect(noSpinMesh.quaternion.equals(qBefore)).toBe(true);
   });
 
   it('syncFromEngine updates mesh position, bounding sphere, and distance', () => {

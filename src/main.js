@@ -26,8 +26,8 @@ import { createModelLoader } from '@/loader/model-loader.js';
 import { createBodyRecord, makePlaceholder } from '@/lod/body-record.js';
 import { createLodRuntime } from '@/lod/lod-runtime.js';
 import { chooseRemnant, triggerSupernova } from '@/fx/supernova.js';
-import { createDragResize } from '@/interaction/drag-resize.js';
 import { createResetPresets } from '@/ui/reset-presets.js';
+import { createSizeSlider } from '@/ui/size-slider.js';
 import { createAutosave } from '@/persistence/autosave.js';
 import { createToaster } from '@/ui/toast.js';
 import { PRESETS } from '@/data/presets.js';
@@ -47,14 +47,6 @@ scene.add(createStarfield());
 // the Sun's position adds directional sunlight that scales.
 scene.add(new AmbientLight(0xffffff, 1.1));
 scene.add(new PointLight(0xffffff, 2.8, 0, 0));
-
-// Edit-mode selection ring — an HTML overlay drawn around the body's projected screen-space
-// bounding circle (Google-Slides style). Only visible in EDIT mode, which the user enters by
-// clicking a body that's already been double-click-pinned.
-const editHalo = document.createElement('div');
-editHalo.className = 'edit-halo';
-editHalo.style.display = 'none';
-document.body.appendChild(editHalo);
 
 const cam = createCameraController(camera, renderer.domElement);
 
@@ -125,6 +117,9 @@ function spawnFromManifest(spec, position = [0,0,0], velocity = [0,0,0]) {
   const r = visibleRadius(spec);
   mesh.scale.setScalar(r);
   mesh.userData.bodyId = spec.id;
+  // Apply axial tilt once at spawn (e.g. Uranus 97.77° → spins on its side).
+  // Subsequent spin() uses local-Y rotation, so it composes with this tilt.
+  if (spec.axialTilt_deg) mesh.rotateZ(spec.axialTilt_deg * Math.PI / 180);
   scene.add(mesh);
   engine.addBody({ id: spec.id, mass: spec.realMass_kg, position, velocity });
   const rec = createBodyRecord(spec, mesh, r);
@@ -186,8 +181,6 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 let selected = null;
 let hoverGrace = null;
 let followedId = null;     // body the camera is currently following (dblclick to pin, ESC to release)
-let editingId = null;      // body in EDIT mode — halo shown, Delete + drag-resize active.
-                            // Entered by clicking a body that's already followed.
 
 createSelectionRaycaster({
   camera, domElement: renderer.domElement,
@@ -197,9 +190,6 @@ createSelectionRaycaster({
     selected = rec;
     if (selected) selected.selected = true;
     if (!selected) props.update(null);
-    // Enter EDIT mode only when the clicked body is already the followed one.
-    // Otherwise exit edit mode (clicking elsewhere ends editing).
-    editingId = (rec && rec.id === followedId) ? rec.id : null;
   },
   onHover: (rec, prev) => {
     if (prev) {
@@ -229,15 +219,29 @@ createSidebar({
   onTapAdd: (id) => dragDrop.armForTapAdd(id),
 });
 
-// Click + drag the body in EDIT mode to resize (mass scales as r³). Stars past 8 M☉ supernova.
-// You're in edit mode only after double-clicking a body (to pin it) and then clicking it again.
-createDragResize({
-  camera, domElement: renderer.domElement, cameraControls: cam,
-  getRecords: () => records,
-  getSelected: () => editingId ? records.find(r => r.id === editingId) : null,
-  engine,
-  onSupernova: (rec, newMass) => goSupernova(rec, newMass),
+// Top-center "Adjust size" slider — appears whenever a body is double-click-pinned. Drag it
+// to rescale the focused body. Mass scales as r³ (volume-proportional). Stars exceeding 8 M☉
+// trigger the supernova chain automatically.
+const sizeSlider = createSizeSlider({
+  onSize: (mult) => {
+    if (!followedId) return;
+    const rec = records.find(r => r.id === followedId);
+    if (!rec) return;
+    const base = rec._baseScale || rec.sceneScale || 1;
+    rec.object.scale.setScalar(base * mult);
+    const newMass = rec.body.realMass_kg * mult * mult * mult;
+    engine.setState(rec.id, { mass: newMass });
+    // Auto-supernova when a star is scaled past the 8 M☉ threshold.
+    if (rec.body.category === 'Stars' && newMass > 8 * 1.989e30) {
+      goSupernova(rec, newMass);
+    }
+  },
 });
+
+function currentSizeMult(rec) {
+  const base = rec._baseScale || rec.sceneScale || 1;
+  return (rec.object.scale.x / base) || 1;
+}
 
 function goSupernova(rec, newMass) {
   const remnantId = chooseRemnant(newMass * 0.5); // half mass shed in collapse
@@ -259,8 +263,8 @@ function destroyBody(id) {
   if (followedId === id) {
     followedId = null;
     cam.release();
+    sizeSlider.hide();
   }
-  if (editingId === id) editingId = null;
   engine.removeBody(id);
   removeRecord(id);
 }
@@ -273,6 +277,7 @@ function clearAll() {
   followedId = null;
   props.update(null);
   cam.release();
+  sizeSlider.hide();
 }
 
 function loadPreset(name) {
@@ -284,7 +289,7 @@ function loadPreset(name) {
   }
 }
 
-createResetPresets({ onPreset: loadPreset });
+createResetPresets({ onReset: clearAll, onPreset: loadPreset });
 
 autosave = createAutosave({
   key: 'space-sim:sandbox',
@@ -310,8 +315,27 @@ if (_prev && Array.isArray(_prev) && _prev.length > 0
   autosave.clear();
 }
 
-// Double-click a body → camera pins/follows it. Double-click empty space → unpin/release.
-// (Single click does nothing so OrbitControls can drag-rotate without accidentally pinning.)
+// Smart-focus: pin the camera to a body and re-zoom so it fills ~28% of screen height.
+// If the camera is already comfortably framed (within 0.4×..2.5× of the desired distance),
+// don't move it — just pin. Direction from camera to body is preserved so we don't disorient.
+const FOCUS_FRACTION = 0.28; // target body diameter as a fraction of screen height
+function smartFocus(rec) {
+  const fovRad = camera.fov * Math.PI / 180;
+  const worldR = (rec.sceneScale || 1) * currentSizeMult(rec);
+  const desiredDist = worldR / (FOCUS_FRACTION * Math.tan(fovRad / 2));
+
+  const offset = new Vector3().subVectors(camera.position, rec.object.position);
+  const currentDist = offset.length() || 1;
+  if (currentDist < desiredDist * 0.4 || currentDist > desiredDist * 2.5) {
+    offset.normalize().multiplyScalar(desiredDist);
+    camera.position.copy(rec.object.position).add(offset);
+  }
+  cam.follow(() => rec.object.position);
+  followedId = rec.id;
+  sizeSlider.show(currentSizeMult(rec), rec.body.displayName);
+}
+
+// Double-click a body → smart focus. Double-click empty → release follow + hide slider.
 const ray = new Raycaster();
 const ndc = new Vector2();
 renderer.domElement.addEventListener('dblclick', (e) => {
@@ -319,17 +343,14 @@ renderer.domElement.addEventListener('dblclick', (e) => {
   ndc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
   ndc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
   ray.setFromCamera(ndc, camera);
-  // pickables computed from current records — supports LOD swaps
   const pickables = records.map(r => r.object);
   const hits = ray.intersectObjects(pickables, true);
-  if (!hits.length) { cam.release(); followedId = null; return; }
-  // climb up to the record's root object so follow tracks the swap-replaced mesh
+  if (!hits.length) { cam.release(); followedId = null; sizeSlider.hide(); return; }
   let n = hits[0].object;
   while (n.parent && !records.some(r => r.object === n)) n = n.parent;
   const rec = records.find(r => r.object === n);
-  // Double-click PINS the camera but does NOT enter edit mode — that takes a subsequent click.
-  if (rec) { cam.follow(() => rec.object.position); followedId = rec.id; editingId = null; }
-  else { cam.release(); followedId = null; editingId = null; }
+  if (rec) smartFocus(rec);
+  else { cam.release(); followedId = null; sizeSlider.hide(); }
 });
 
 window.addEventListener('resize', () => {
@@ -341,53 +362,17 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     cam.release();
     followedId = null;
-    editingId = null;
+    sizeSlider.hide();
     if (selected) { selected.selected = false; selected = null; props.update(null); }
     return;
   }
-  if ((e.key === 'Delete' || e.key === 'Backspace') && editingId) {
+  if ((e.key === 'Delete' || e.key === 'Backspace') && followedId) {
     // Don't fire while typing in the sidebar search.
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    destroyBody(editingId);
+    destroyBody(followedId);
   }
 });
-
-const _projPos = new Vector3();
-function updateEditHalo(rec) {
-  _projPos.copy(rec.object.position).project(camera);
-  // Hide when behind the camera (z >= 1 in clip-space).
-  if (_projPos.z >= 1) { editHalo.style.display = 'none'; return; }
-
-  const cx = (_projPos.x + 1) * 0.5 * innerWidth;
-  const cy = (-_projPos.y + 1) * 0.5 * innerHeight;
-
-  // Effective rendered world-space radius of this body.
-  // Placeholder spheres have geometry-radius 1, so scale.x is the radius.
-  // After LOD swap, the GLB is bbox-normalized so that scale = _baseScale gives the rendered
-  // diameter = sceneScale * 2. Any extra factor (scale.x / _baseScale) is the user's resize
-  // multiplier, so the current effective radius is sceneScale * (scale.x / _baseScale).
-  const base = rec._baseScale || rec.sceneScale || 1;
-  const sizeMult = (rec.object.scale.x / base) || 1;
-  const worldRadius = (rec.sceneScale || 1) * sizeMult;
-
-  // Pinhole-projection screen radius (works correctly regardless of camera orientation).
-  // For a perspective camera: screenR = (worldRadius / distance) * focalLengthPixels,
-  // where focalLengthPixels = (height/2) / tan(fov/2).
-  const dist = camera.position.distanceTo(rec.object.position);
-  if (dist <= 0) { editHalo.style.display = 'none'; return; }
-  const fovRad = camera.fov * Math.PI / 180;
-  const focal = (innerHeight / 2) / Math.tan(fovRad / 2);
-  const screenR = Math.max(4, (worldRadius / dist) * focal);
-
-  const pad = 4;
-  const total = screenR * 2 + pad * 2;
-  editHalo.style.left = (cx - screenR - pad) + 'px';
-  editHalo.style.top  = (cy - screenR - pad) + 'px';
-  editHalo.style.width = total + 'px';
-  editHalo.style.height = total + 'px';
-  editHalo.style.display = 'block';
-}
 
 // Stage 4 postprocessing pipeline:
 //   - Selective bloom (only the BLOOM_LAYER renders into the bloom pass; stars glow, planets don't)
@@ -428,16 +413,6 @@ function tick(now) {
   const realT = now / 1000;
   for (const m of animatedMaterials) {
     if (m.uniforms?.uTime) m.uniforms.uTime.value = realT;
-  }
-
-  // Edit-mode HTML halo: project the body's bounding sphere to screen space, draw a blue
-  // circle around it (like a Google-Slides selection border).
-  if (editingId) {
-    const rec = records.find(r => r.id === editingId);
-    if (!rec) { editingId = null; editHalo.style.display = 'none'; }
-    else updateEditHalo(rec);
-  } else {
-    editHalo.style.display = 'none';
   }
 
   if (selected) {

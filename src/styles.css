@@ -3,6 +3,8 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: 
 canvas#scene { position: fixed; inset: 0; display: block; }
 #ui-root { position: fixed; inset: 0; pointer-events: none; }
 #ui-root > * { pointer-events: auto; }
+
+/* Loading screen ------------------------------------------------------- */
 #loading-screen { position: fixed; inset: 0; background: #000; display: flex; align-items: center; justify-content: center; z-index: 9999; transition: opacity 600ms ease; }
 #loading-screen.ls-fading { opacity: 0; }
 #loading-screen.ls-hidden { display: none; }
@@ -12,13 +14,8 @@ canvas#scene { position: fixed; inset: 0; display: block; }
 .ls-bar-fill { height: 100%; width: 0; background: linear-gradient(90deg,#4af,#a4f); transition: width 200ms ease; }
 .ls-status { margin-top: 12px; font-size: 12px; opacity: 0.6; letter-spacing: 0.1em; }
 .ls-error { color: #f66; font-size: 13px; }
-.time-slider { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); width: min(420px, 80vw); padding: 12px 16px; background: rgba(15,15,25,0.7); border: 1px solid #2a2a3a; border-radius: 8px; backdrop-filter: blur(6px); }
-.time-slider .ts-label { display: flex; justify-content: space-between; font-size: 12px; letter-spacing: 0.1em; opacity: 0.85; margin-bottom: 6px; }
-.time-slider input[type=range] { width: 100%; }
-.time-slider .ts-hint { font-size: 10px; opacity: 0.5; margin-top: 4px; text-align: center; }
-.reset-view-btn { position: fixed; top: 20px; right: 20px; padding: 8px 14px; background: rgba(15,15,25,0.7); border: 1px solid #2a2a3a; color: #eee; border-radius: 6px; font-size: 12px; letter-spacing: 0.05em; cursor: pointer; backdrop-filter: blur(6px); transition: background 120ms; }
-.reset-view-btn:hover { background: rgba(40,40,60,0.85); }
-.reset-view-btn:active { background: rgba(60,60,80,0.9); }
+
+/* Sidebar (top-left) --------------------------------------------------- */
 .sidebar { position: fixed; top: 16px; left: 16px; width: 280px; max-height: calc(100vh - 32px); overflow-y: auto; background: rgba(15,15,25,0.78); border: 1px solid #2a2a3a; border-radius: 8px; padding: 10px 12px; backdrop-filter: blur(6px); font-size: 13px; z-index: 6; }
 .sb-row { display: flex; flex-direction: column; gap: 8px; }
 .sb-search { width: 100%; padding: 6px 8px; background: #0a0a12; color: #ddd; border: 1px solid #2a2a3a; border-radius: 4px; font-size: 12px; }
@@ -31,28 +28,42 @@ canvas#scene { position: fixed; inset: 0; display: block; }
 .sb-item { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 4px; cursor: grab; user-select: none; background: rgba(20,20,32,0.5); border: 1px solid #1f1f2e; font-size: 12px; }
 .sb-item:hover { background: #1a1a28; border-color: #2a2a3a; }
 .sb-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.props-panel { position: fixed; top: 64px; right: 16px; width: 280px; background: rgba(15,15,25,0.78); border: 1px solid #2a2a3a; border-radius: 8px; padding: 12px; font-size: 12px; backdrop-filter: blur(6px); z-index: 5; }
+
+/* Properties panel (top-right, row 1) ---------------------------------- */
+.props-panel { position: fixed; top: 16px; right: 16px; width: 280px; background: rgba(15,15,25,0.78); border: 1px solid #2a2a3a; border-radius: 8px; padding: 12px; font-size: 12px; backdrop-filter: blur(6px); z-index: 5; }
 .props-panel h3 { margin: 0 0 4px; font-size: 14px; }
 .props-panel .props-desc { opacity: 0.7; margin: 0 0 8px; font-size: 11px; }
 .props-panel dl { display: grid; grid-template-columns: 80px 1fr; gap: 4px 12px; margin: 0; }
 .props-panel dt { opacity: 0.6; }
 .props-panel dd { margin: 0; word-break: break-all; }
 .props-empty { opacity: 0.5; font-size: 12px; text-align: center; padding: 20px 0; }
+
+/* Reset + presets (top-right, row 2, just under props-panel) ----------- */
+.reset-presets { position: fixed; top: 16px; right: 312px; display: flex; gap: 8px; z-index: 5; align-items: center; }
+.reset-presets button, .reset-presets select { background: rgba(15,15,25,0.7); border: 1px solid #2a2a3a; color: #ddd; border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; backdrop-filter: blur(6px); }
+.reset-presets button:hover, .reset-presets select:hover { background: rgba(40,40,60,0.85); }
+
+/* "Adjust size" slider (top-center, only shown when a body is pinned) -- */
+.size-slider { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); width: min(380px, 50vw); padding: 8px 14px; background: rgba(15,15,25,0.78); border: 1px solid #2a2a3a; border-radius: 8px; font-size: 12px; backdrop-filter: blur(6px); z-index: 5; }
+.size-slider[hidden] { display: none; }
+.size-slider .ss-label { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; margin-bottom: 6px; opacity: 0.9; letter-spacing: 0.04em; }
+.size-slider .ss-name { opacity: 0.6; font-size: 11px; flex: 1 1 auto; text-align: left; padding-left: 8px; }
+.size-slider .ss-val { opacity: 0.85; }
+.size-slider input[type=range] { width: 100%; }
+
+/* Hover card ----------------------------------------------------------- */
 .hover-card { position: fixed; max-width: 260px; padding: 10px 12px; background: rgba(15,15,25,0.92); border: 1px solid #2a2a3a; border-radius: 6px; font-size: 12px; pointer-events: none; opacity: 0; transition: opacity 120ms; z-index: 100; }
 .hover-card.hc-shown { opacity: 1; }
 .hc-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
 .hc-row { display: flex; justify-content: space-between; opacity: 0.7; }
 .hc-desc { margin-top: 6px; opacity: 0.6; font-size: 11px; }
-.mass-controls { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 16px; align-items: center; padding: 8px 14px; background: rgba(15,15,25,0.7); border: 1px solid #2a2a3a; border-radius: 8px; font-size: 11px; z-index: 5; }
-.mass-controls label { display: flex; align-items: center; gap: 8px; }
-.mass-controls input[type=range] { width: 120px; }
-.mc-mass-val { opacity: 0.7; min-width: 48px; text-align: right; }
-.reset-presets { position: fixed; top: 16px; right: 320px; display: flex; gap: 8px; z-index: 5; }
-.reset-presets button, .reset-presets select { background: rgba(15,15,25,0.7); border: 1px solid #2a2a3a; color: #ddd; border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; backdrop-filter: blur(6px); }
-.reset-presets button:hover, .reset-presets select:hover { background: rgba(40,40,60,0.85); }
-.toaster { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; z-index: 50; pointer-events: none; }
+
+/* Time slider (bottom-center) ----------------------------------------- */
+.time-slider { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); width: min(420px, 80vw); padding: 12px 16px; background: rgba(15,15,25,0.7); border: 1px solid #2a2a3a; border-radius: 8px; backdrop-filter: blur(6px); }
+.time-slider .ts-label { display: flex; justify-content: space-between; font-size: 12px; letter-spacing: 0.1em; opacity: 0.85; margin-bottom: 6px; }
+.time-slider input[type=range] { width: 100%; }
+.time-slider .ts-hint { font-size: 10px; opacity: 0.5; margin-top: 4px; text-align: center; }
+
+/* Toasts (bottom-center, above time slider) ---------------------------- */
+.toaster { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; z-index: 50; pointer-events: none; }
 .toast { background: rgba(60,30,30,0.92); border: 1px solid #722; color: #fbb; padding: 8px 12px; border-radius: 6px; font-size: 12px; pointer-events: auto; max-width: 360px; }
-.bg-selector { position: fixed; bottom: 20px; left: 20px; padding: 6px 10px; background: rgba(15,15,25,0.7); border: 1px solid #2a2a3a; border-radius: 6px; font-size: 11px; backdrop-filter: blur(6px); z-index: 5; }
-.bg-selector label { display: flex; align-items: center; gap: 8px; letter-spacing: 0.05em; }
-.bs-select { background: rgba(15,15,25,0.5); color: #ddd; border: 1px solid #2a2a3a; border-radius: 4px; padding: 4px 6px; font-size: 12px; cursor: pointer; }
-.edit-halo { position: fixed; border: 2.5px solid #4ab2ff; border-radius: 50%; pointer-events: none; box-shadow: 0 0 0 1px rgba(74,178,255,0.25), 0 0 14px rgba(74,178,255,0.45); z-index: 4; }

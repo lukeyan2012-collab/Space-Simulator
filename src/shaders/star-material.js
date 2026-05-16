@@ -48,8 +48,9 @@ export function createStarMaterial({ temperature_K = 5778 } = {}) {
         // Limb darkening: fragments whose normal is perpendicular to the view get dimmer.
         float fresnel = pow(1.0 - abs(dot(vN, vec3(0.0, 0.0, 1.0))), 1.8);
         // Subtle low-frequency flicker — purely cosmetic.
-        float flicker = 0.93 + 0.07 * sin(uTime * 1.6 + vP.x * 0.4 + vP.y * 0.7);
-        vec3 col = uColor * (1.35 - 0.4 * fresnel) * flicker;
+        float flicker = 0.95 + 0.05 * sin(uTime * 1.4 + vP.x * 0.4 + vP.y * 0.7);
+        // Dimmer than before (was 1.35 - 0.4*fresnel); the selective-bloom pass adds the glow.
+        vec3 col = uColor * (0.78 - 0.30 * fresnel) * flicker;
         gl_FragColor = vec4(col, 1.0);
       }
     `,

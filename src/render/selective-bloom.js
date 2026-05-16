@@ -22,7 +22,10 @@ export function createSelectiveBloom({ renderer, scene, camera, extraPass = null
   const bloomComposer = new EffectComposer(renderer);
   bloomComposer.renderToScreen = false;
   bloomComposer.addPass(new RenderPass(scene, camera));
-  bloomComposer.addPass(new UnrealBloomPass(size, 1.4, 0.5, 0.0));
+  // Bloom params: (resolution, strength, radius, threshold). Strength dropped from 1.4 to
+  // make the suns less overpowering. Half-res target keeps the GPU load modest.
+  const bloomRes = new Vector2(Math.max(64, size.x * 0.5), Math.max(64, size.y * 0.5));
+  bloomComposer.addPass(new UnrealBloomPass(bloomRes, 0.75, 0.45, 0.0));
 
   const finalShader = {
     uniforms: {

@@ -30,12 +30,14 @@ export function createBodyRecord(body, mesh, sceneScale) {
       this.boundingSphere.radius = Math.max(1, this.sceneScale);
       this._distance = this.object.position.distanceTo(camera.position);
     },
-    // Advance axial spin by deltaSimSec simulated seconds. Negative period = retrograde.
-    // Null/undefined period = no spin (e.g. satellites whose mass is too small to define one).
+    // Advance axial spin by deltaSimSec simulated seconds. Uses rotateY (rotation around the
+    // mesh's LOCAL Y axis) so it composes correctly with an axial tilt applied at spawn time —
+    // tilt the body once, then spin around its tilted pole.
+    // Negative period = retrograde. Null/undefined period = no spin.
     spin(deltaSimSec) {
       const period = this.body.rotationPeriod_s;
       if (!period || !Number.isFinite(period)) return;
-      this.object.rotation.y += (deltaSimSec / period) * Math.PI * 2;
+      this.object.rotateY((deltaSimSec / period) * Math.PI * 2);
     },
   };
 }

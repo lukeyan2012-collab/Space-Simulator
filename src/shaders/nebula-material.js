@@ -20,12 +20,14 @@ const NOISE3D = /* glsl */`
   }
 `;
 
-function randomVibrant() {
-  return new Color().setHSL(Math.random(), 0.7 + Math.random() * 0.3, 0.55);
+// Generate a vibrant color (high saturation, mid lightness). Stays out of muddy gray territory.
+function vibrant() {
+  return new Color().setHSL(Math.random(), 0.9 + Math.random() * 0.1, 0.5 + Math.random() * 0.12);
 }
 
-// Volumetric-ish nebula shader. Each instance is seeded differently so two nebulae never
-// look identical. Additive blending so overlapping clouds layer instead of occluding.
+// Three-color volumetric nebula. Two fBm fields blend three vibrant colors, so each instance is
+// a unique mix and the result rarely looks two-tone. Additive blending so overlapping clouds
+// layer their colors together.
 export function createNebulaMaterial() {
   return new ShaderMaterial({
     transparent: true,
@@ -33,8 +35,9 @@ export function createNebulaMaterial() {
     blending: AdditiveBlending,
     uniforms: {
       uTime:   { value: 0 },
-      uColorA: { value: randomVibrant() },
-      uColorB: { value: randomVibrant() },
+      uColorA: { value: vibrant() },
+      uColorB: { value: vibrant() },
+      uColorC: { value: vibrant() },
       uSeed:   { value: Math.random() * 100 },
     },
     vertexShader: /* glsl */`
@@ -46,16 +49,18 @@ export function createNebulaMaterial() {
     `,
     fragmentShader: /* glsl */`
       uniform float uTime;
-      uniform vec3 uColorA, uColorB;
+      uniform vec3 uColorA, uColorB, uColorC;
       uniform float uSeed;
       varying vec3 vP;
       ${NOISE3D}
       void main() {
         vec3 p = vP * 1.2 + vec3(uSeed);
-        float d = fbm3(p + vec3(0.0, uTime * 0.03, 0.0));
-        float a = smoothstep(0.40, 0.85, d);
-        vec3 col = mix(uColorA, uColorB, fbm3(p * 1.7));
-        gl_FragColor = vec4(col, a * 0.55);
+        float d  = fbm3(p + vec3(0.0, uTime * 0.03, 0.0));   // overall density
+        float t1 = fbm3(p * 1.7 + vec3(uSeed * 0.1));        // first color blend
+        float t2 = fbm3(p * 2.3 + vec3(0.0, 0.0, uSeed));    // second color blend
+        float a  = smoothstep(0.38, 0.85, d);
+        vec3 col = mix(mix(uColorA, uColorB, t1), uColorC, t2 * 0.6);
+        gl_FragColor = vec4(col * 1.15, a * 0.7);
       }
     `,
   });
