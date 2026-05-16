@@ -87,7 +87,7 @@ function visibleRadius(spec) {
   // Nebulae are diffuse clouds, not bodies — render them much larger than the power-law gives
   // so the volumetric shader has room to look 3D.
   if (spec.procedural === 'nebula') {
-    return Math.max(30, EARTH_RENDER_R * Math.pow(r, RADIUS_EXP) * 5);
+    return Math.max(50, EARTH_RENDER_R * Math.pow(r, RADIUS_EXP) * 6);
   }
   return Math.max(MIN_RENDER_R, EARTH_RENDER_R * Math.pow(r, RADIUS_EXP));
 }
@@ -274,6 +274,12 @@ function trapBody(rec, absorber) {
   if (followedId === rec.id) { cam.release(); followedId = null; sizeSlider.hide(); }
 }
 
+// Capture distance multipliers. Black holes have a much wider effective "event horizon" than
+// the rendered mesh — once you cross it, nothing can escape (we override velocity to zero
+// and animate the body to the center over 3 seconds).
+const STAR_CAPTURE_MULT = 1.4;
+const BH_CAPTURE_MULT   = 3.5;
+
 // Scan for non-absorber bodies overlapping any absorber and start the trap animation.
 function checkAbsorptions() {
   const absorbers = records.filter(r => isAbsorber(r.body));
@@ -286,7 +292,8 @@ function checkAbsorptions() {
       const dy = rec.object.position.y - ab.object.position.y;
       const dz = rec.object.position.z - ab.object.position.z;
       const d2 = dx*dx + dy*dy + dz*dz;
-      const rsum = rec.object.scale.x + ab.object.scale.x;
+      const mult = ab.body.procedural === 'black_hole' ? BH_CAPTURE_MULT : STAR_CAPTURE_MULT;
+      const rsum = rec.object.scale.x + ab.object.scale.x * mult;
       if (d2 < rsum * rsum) { trapBody(rec, ab); break; }
     }
   }

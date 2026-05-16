@@ -1,4 +1,4 @@
-import { ShaderMaterial, Color, AdditiveBlending } from 'three';
+import { ShaderMaterial, Color, AdditiveBlending, DoubleSide } from 'three';
 
 const NOISE3D = /* glsl */`
   float hash3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
@@ -25,14 +25,18 @@ function vibrant() {
   return new Color().setHSL(Math.random(), 0.92 + Math.random() * 0.08, 0.55 + Math.random() * 0.12);
 }
 
-// Three-color volumetric nebula. Two fBm fields blend three vibrant colors, with a radial
-// alpha falloff that makes the surface fade away from the edge — gives the illusion of an
-// actual 3D cloud rather than a hard sphere shell. Additive blending so overlapping clouds
-// layer their colors together.
+// Three-color volumetric nebula. Two fBm fields blend three vibrant colors. The volumetric
+// look comes from a view-space-normal falloff (`abs(vN.z)`) — the fragment is most opaque
+// where the surface faces the camera and softly fades at the silhouette. Rendered DoubleSide
+// + additive so both faces of the sphere contribute, doubling the color in the middle.
+//
+// (Previous version tried `length(vP)` for the falloff, but `position` is always on the unit
+// sphere → length(vP) == 1 → alpha collapsed to zero and you couldn't see anything.)
 export function createNebulaMaterial() {
   return new ShaderMaterial({
     transparent: true,
     depthWrite: false,
+    side: DoubleSide,
     blending: AdditiveBlending,
     uniforms: {
       uTime:   { value: 0 },
@@ -43,8 +47,10 @@ export function createNebulaMaterial() {
     },
     vertexShader: /* glsl */`
       varying vec3 vP;
+      varying vec3 vN;
       void main() {
         vP = position;
+        vN = normalize(normalMatrix * normal);
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `,
@@ -53,22 +59,23 @@ export function createNebulaMaterial() {
       uniform vec3 uColorA, uColorB, uColorC;
       uniform float uSeed;
       varying vec3 vP;
+      varying vec3 vN;
       ${NOISE3D}
       void main() {
-        vec3 p = vP * 1.5 + vec3(uSeed);
+        vec3 p = vP * 1.6 + vec3(uSeed);
         float d  = fbm3(p + vec3(0.0, uTime * 0.025, 0.0));            // density field
         float t1 = fbm3(p * 1.8 + vec3(uSeed * 0.1, 0.0, 0.0));        // color blend A↔B
         float t2 = fbm3(p * 2.4 + vec3(0.0, uSeed * 0.3, uSeed * 0.7));// color blend → C
 
-        // Soft radial falloff: fragments near the sphere center keep their alpha; near the
-        // boundary they fade to 0. Makes the volumetric look right — no hard sphere silhouette.
-        float r = length(vP);
-        float radial = 1.0 - smoothstep(0.45, 1.0, r);
+        // View-space normal Z = "how front-facing" the fragment is. ~1 near the projected
+        // center of the disk, ~0 at the silhouette. Gives a soft 3D-cloud edge.
+        float facing = abs(vN.z);
+        float radial = smoothstep(0.0, 0.9, facing);
 
-        float a = smoothstep(0.32, 0.78, d) * radial;
+        float a = smoothstep(0.22, 0.75, d) * radial;
         if (a < 0.005) discard;
         vec3 col = mix(mix(uColorA, uColorB, t1), uColorC, t2 * 0.65);
-        gl_FragColor = vec4(col * 1.4, a * 0.85);
+        gl_FragColor = vec4(col * 1.6, a * 0.95);
       }
     `,
   });
