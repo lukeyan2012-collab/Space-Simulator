@@ -28,6 +28,8 @@ import { createLodRuntime } from '@/lod/lod-runtime.js';
 import { chooseRemnant, triggerSupernova } from '@/fx/supernova.js';
 import { createResetPresets } from '@/ui/reset-presets.js';
 import { createSizeSlider } from '@/ui/size-slider.js';
+import { createGhost } from '@/interaction/ghost-spawn.js';
+import { createGhostPanel } from '@/ui/ghost-panel.js';
 import { createAutosave } from '@/persistence/autosave.js';
 import { createToaster } from '@/ui/toast.js';
 import { PRESETS } from '@/data/presets.js';
@@ -212,11 +214,61 @@ createSelectionRaycaster({
   },
 });
 
+// Ghost-spawn flow: dropping a body from the sidebar creates a transparent ghost preview the
+// user can configure (size / spin / speed / direction) before clicking Insert to commit.
+let ghost = null;
+function visibleRadiusFor(spec) { return visibleRadius(spec); } // forward ref for the closure
+const ghostPanel = createGhostPanel({
+  onSize:      (v) => ghost?.setSize(v),
+  onSpin:      (v) => ghost?.setSpin(v),
+  onSpeed:     (v) => ghost?.setSpeed(v),
+  onAzimuth:   (v) => ghost?.setAzimuth(v),
+  onElevation: (v) => ghost?.setElevation(v),
+  onCancel:    () => cancelGhost(),
+  onInsert:    () => commitGhost(),
+});
+function cancelGhost() {
+  if (!ghost) return;
+  ghost.destroy();
+  ghost = null;
+  ghostPanel.hide();
+}
+function commitGhost() {
+  if (!ghost) return;
+  const c = ghost.getCommit();
+  const rec = spawnFromManifest(c.spec, c.position, c.velocity);
+  // Apply the user's size / spin overrides post-spawn.
+  if (rec) {
+    const base = rec._baseScale || rec.sceneScale || 1;
+    rec.object.scale.setScalar(base * c.sizeMult);
+    rec._spinMult = c.spinMult; // body-record.spin() consults this if present
+    if (c.sizeMult !== 1) {
+      const newMass = rec.body.realMass_kg * c.sizeMult * c.sizeMult * c.sizeMult;
+      engine.setState(rec.id, { mass: newMass });
+    }
+  }
+  ghost.destroy();
+  ghost = null;
+  ghostPanel.hide();
+}
+
 const dragDrop = createDragDrop({
   scene, camera, domElement: renderer.domElement, manifest,
   getRecords: () => records,
   getCamTarget: () => cam.target,
   spawn: (body, pos, vel) => spawnFromManifest(body, pos, vel),
+  onGhostStart: (body, positionScene, { defaultSpeed }) => {
+    // Cancel any previous ghost first so we don't pile them up.
+    cancelGhost();
+    const r = visibleRadiusFor(body);
+    ghost = createGhost({
+      spec: body, position: positionScene, scene, baseRadius: r,
+      defaultSpeed: Math.max(0, defaultSpeed || 0),
+    });
+    ghostPanel.show(body.displayName, {
+      size: 1, spin: 1, speed: defaultSpeed || 10000, az: 0, el: 0,
+    });
+  },
 });
 createSidebar({
   manifest,
@@ -418,6 +470,7 @@ window.addEventListener('resize', () => {
 });
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    if (ghost) { cancelGhost(); return; }
     cam.release();
     followedId = null;
     sizeSlider.hide();

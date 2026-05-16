@@ -33,11 +33,15 @@ export function createBodyRecord(body, mesh, sceneScale) {
     // Advance axial spin by deltaSimSec simulated seconds. Uses rotateY (rotation around the
     // mesh's LOCAL Y axis) so it composes correctly with an axial tilt applied at spawn time —
     // tilt the body once, then spin around its tilted pole.
+    // Multiplied by SPIN_VIS_MULT so spin is visually slower than its real-world rate —
+    // otherwise at fast-forward time scales planets become blurry tops.
     // Negative period = retrograde. Null/undefined period = no spin.
     spin(deltaSimSec) {
       const period = this.body.rotationPeriod_s;
       if (!period || !Number.isFinite(period)) return;
-      this.object.rotateY((deltaSimSec / period) * Math.PI * 2);
+      const SPIN_VIS_MULT = 0.18;
+      const userMult = this._spinMult ?? 1; // optional per-body override (set by ghost commit)
+      this.object.rotateY((deltaSimSec * SPIN_VIS_MULT * userMult / period) * Math.PI * 2);
     },
   };
 }

@@ -2,8 +2,37 @@ import { Box3, Vector3 } from 'three';
 import { createLodManager } from './lod-manager.js';
 import { createFrustumHelper } from './frustum-helper.js';
 
+// Screen-space LOD threshold (in pixels): the body's projected diameter in pixels is what we
+// use to pick high vs low. Pixel-space is more stable than world-distance because it accounts
+// for FOV and viewport size. Hysteresis band is wide (40 → 200) so swaps need a clear signal.
+const PX_UPGRADE   = 200; // diameter ≥ this → high LOD
+const PX_DOWNGRADE = 40;  // diameter ≤ this → low LOD
+                          // anything between → keep current LOD (no swap)
+
+function screenPixelDiameter(rec, camera) {
+  const dist = camera.position.distanceTo(rec.object.position);
+  if (dist <= 1e-3) return Infinity;
+  const fovRad = camera.fov * Math.PI / 180;
+  const focal = (window.innerHeight / 2) / Math.tan(fovRad / 2);
+  // Use sceneScale (NOT scale.x), so a user drag-resize doesn't move the LOD threshold —
+  // LOD is decided by the body's intrinsic visual size, not the user's resize multiplier.
+  const worldR = rec.sceneScale || 1;
+  return (worldR / dist) * focal * 2;
+}
+
 export function createLodRuntime({ records, modelLoader, scene }) {
-  const manager = createLodManager();
+  // The manager handles priority/budget/visibility. We map pixel-diameter → its "distance"
+  // input so the existing manager API works: bigger pixels = smaller "distance" = higher
+  // priority + tripping the upgrade threshold.
+  // Manager thresholds in "distance" units: upgrade if dist < UP, downgrade if dist > DOWN.
+  // We translate from pixels using distance = MAP / pixels; then UP/DOWN below pin to the
+  // pixel thresholds above.
+  const MAP = 10000;
+  const manager = createLodManager({
+    highBudget: 3,
+    upgradeAt: MAP / PX_UPGRADE,   // ~50 in distance units → equiv to ≥ 200 px diameter
+    downgradeAt: MAP / PX_DOWNGRADE,// ~250 in distance units → equiv to ≤ 40 px diameter
+  });
   const frustum = createFrustumHelper();
   const inflightSwap = new Set(); // ids currently mid-swap, prevent double-swap
 
@@ -55,13 +84,16 @@ export function createLodRuntime({ records, modelLoader, scene }) {
 
   function tick(camera) {
     frustum.update(camera);
-    const list = records.map(r => ({
-      id: r.id,
-      distance: r._distance ?? Infinity,
-      visible: frustum.intersectsSphere(r.boundingSphere),
-      selected: r.selected,
-      hovered: r.hovered,
-    }));
+    const list = records.map(r => {
+      const px = screenPixelDiameter(r, camera);
+      return {
+        id: r.id,
+        distance: MAP / Math.max(0.1, px), // smaller = bigger on screen = more important
+        visible: frustum.intersectsSphere(r.boundingSphere),
+        selected: r.selected,
+        hovered: r.hovered,
+      };
+    });
     const decisions = manager.decide(list);
     for (const d of decisions) {
       const r = records.find(rr => rr.id === d.id);
