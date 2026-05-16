@@ -309,18 +309,33 @@ window.addEventListener('keydown', (e) => {
 });
 
 const _projPos = new Vector3();
-const _projUp = new Vector3();
 function updateEditHalo(rec) {
   _projPos.copy(rec.object.position).project(camera);
-  if (_projPos.z >= 1) { editHalo.style.display = 'none'; return; } // behind camera
+  // Hide when behind the camera (z >= 1 in clip-space).
+  if (_projPos.z >= 1) { editHalo.style.display = 'none'; return; }
+
   const cx = (_projPos.x + 1) * 0.5 * innerWidth;
   const cy = (-_projPos.y + 1) * 0.5 * innerHeight;
-  // Measure the screen-space radius by projecting a point offset by the body's world radius.
-  _projUp.copy(rec.object.position)
-    .add(camera.up.clone().normalize().multiplyScalar(rec.object.scale.x))
-    .project(camera);
-  const screenR = Math.max(4, Math.abs((_projUp.y - _projPos.y) * 0.5 * innerHeight));
-  const pad = 6;
+
+  // Effective rendered world-space radius of this body.
+  // Placeholder spheres have geometry-radius 1, so scale.x is the radius.
+  // After LOD swap, the GLB is bbox-normalized so that scale = _baseScale gives the rendered
+  // diameter = sceneScale * 2. Any extra factor (scale.x / _baseScale) is the user's resize
+  // multiplier, so the current effective radius is sceneScale * (scale.x / _baseScale).
+  const base = rec._baseScale || rec.sceneScale || 1;
+  const sizeMult = (rec.object.scale.x / base) || 1;
+  const worldRadius = (rec.sceneScale || 1) * sizeMult;
+
+  // Pinhole-projection screen radius (works correctly regardless of camera orientation).
+  // For a perspective camera: screenR = (worldRadius / distance) * focalLengthPixels,
+  // where focalLengthPixels = (height/2) / tan(fov/2).
+  const dist = camera.position.distanceTo(rec.object.position);
+  if (dist <= 0) { editHalo.style.display = 'none'; return; }
+  const fovRad = camera.fov * Math.PI / 180;
+  const focal = (innerHeight / 2) / Math.tan(fovRad / 2);
+  const screenR = Math.max(4, (worldRadius / dist) * focal);
+
+  const pad = 4;
   const total = screenR * 2 + pad * 2;
   editHalo.style.left = (cx - screenR - pad) + 'px';
   editHalo.style.top  = (cy - screenR - pad) + 'px';
