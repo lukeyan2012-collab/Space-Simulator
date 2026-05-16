@@ -12,7 +12,7 @@ import { createVerletEngine } from '@/physics/verlet-engine.js';
 import {
   G, DISTANCE_SCALE, TIME_BASE_SECONDS_PER_REAL_SECOND, MAX_SUBSTEPS_PER_FRAME,
 } from '@/physics/constants.js';
-import { Raycaster, Vector2, AmbientLight, PointLight, Mesh, SphereGeometry, MeshBasicMaterial, BackSide, AdditiveBlending } from 'three';
+import { Raycaster, Vector2, Vector3, AmbientLight, PointLight } from 'three';
 import manifest from '@/data/bodies.json';
 import { createLoadingOrchestrator } from '@/loader/loading-orchestrator.js';
 import { createModelLoader } from '@/loader/model-loader.js';
@@ -41,22 +41,13 @@ scene.add(createStarfield());
 scene.add(new AmbientLight(0xffffff, 1.1));
 scene.add(new PointLight(0xffffff, 2.8, 0, 0));
 
-// Selection halo — a translucent yellow backside sphere drawn around whatever body is selected.
-// Reused across selections; visibility toggled in tick().
-const selectionHalo = new Mesh(
-  new SphereGeometry(1, 32, 32),
-  new MeshBasicMaterial({
-    color: 0xffe24a,
-    transparent: true,
-    opacity: 0.35,
-    side: BackSide,
-    depthWrite: false,
-    blending: AdditiveBlending,
-  }),
-);
-selectionHalo.visible = false;
-selectionHalo.renderOrder = 1; // draw after opaque geometry
-scene.add(selectionHalo);
+// Edit-mode selection ring — an HTML overlay drawn around the body's projected screen-space
+// bounding circle (Google-Slides style). Only visible in EDIT mode, which the user enters by
+// clicking a body that's already been double-click-pinned.
+const editHalo = document.createElement('div');
+editHalo.className = 'edit-halo';
+editHalo.style.display = 'none';
+document.body.appendChild(editHalo);
 
 const cam = createCameraController(camera, renderer.domElement);
 
@@ -149,7 +140,9 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 
 let selected = null;
 let hoverGrace = null;
-let followedId = null;     // id of the body the camera is currently following (for cleanup on remove)
+let followedId = null;     // body the camera is currently following (dblclick to pin, ESC to release)
+let editingId = null;      // body in EDIT mode — halo shown, Delete + drag-resize active.
+                            // Entered by clicking a body that's already followed.
 
 createSelectionRaycaster({
   camera, domElement: renderer.domElement,
@@ -159,6 +152,9 @@ createSelectionRaycaster({
     selected = rec;
     if (selected) selected.selected = true;
     if (!selected) props.update(null);
+    // Enter EDIT mode only when the clicked body is already the followed one.
+    // Otherwise exit edit mode (clicking elsewhere ends editing).
+    editingId = (rec && rec.id === followedId) ? rec.id : null;
   },
   onHover: (rec, prev) => {
     if (prev) {
@@ -188,12 +184,12 @@ createSidebar({
   onTapAdd: (id) => dragDrop.armForTapAdd(id),
 });
 
-// Click + drag the SELECTED body to resize (mass scales as r³). Stars past 8 M☉ go supernova
-// automatically. Unselected bodies aren't draggable — click once to highlight first.
+// Click + drag the body in EDIT mode to resize (mass scales as r³). Stars past 8 M☉ supernova.
+// You're in edit mode only after double-clicking a body (to pin it) and then clicking it again.
 createDragResize({
   camera, domElement: renderer.domElement, cameraControls: cam,
   getRecords: () => records,
-  getSelected: () => selected,
+  getSelected: () => editingId ? records.find(r => r.id === editingId) : null,
   engine,
   onSupernova: (rec, newMass) => goSupernova(rec, newMass),
 });
@@ -219,6 +215,7 @@ function destroyBody(id) {
     followedId = null;
     cam.release();
   }
+  if (editingId === id) editingId = null;
   engine.removeBody(id);
   removeRecord(id);
 }
@@ -285,8 +282,9 @@ renderer.domElement.addEventListener('dblclick', (e) => {
   let n = hits[0].object;
   while (n.parent && !records.some(r => r.object === n)) n = n.parent;
   const rec = records.find(r => r.object === n);
-  if (rec) { cam.follow(() => rec.object.position); followedId = rec.id; }
-  else { cam.release(); followedId = null; }
+  // Double-click PINS the camera but does NOT enter edit mode — that takes a subsequent click.
+  if (rec) { cam.follow(() => rec.object.position); followedId = rec.id; editingId = null; }
+  else { cam.release(); followedId = null; editingId = null; }
 });
 
 window.addEventListener('resize', () => {
@@ -298,16 +296,38 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     cam.release();
     followedId = null;
+    editingId = null;
     if (selected) { selected.selected = false; selected = null; props.update(null); }
     return;
   }
-  if ((e.key === 'Delete' || e.key === 'Backspace') && selected) {
+  if ((e.key === 'Delete' || e.key === 'Backspace') && editingId) {
     // Don't fire while typing in the sidebar search.
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    destroyBody(selected.id);
+    destroyBody(editingId);
   }
 });
+
+const _projPos = new Vector3();
+const _projUp = new Vector3();
+function updateEditHalo(rec) {
+  _projPos.copy(rec.object.position).project(camera);
+  if (_projPos.z >= 1) { editHalo.style.display = 'none'; return; } // behind camera
+  const cx = (_projPos.x + 1) * 0.5 * innerWidth;
+  const cy = (-_projPos.y + 1) * 0.5 * innerHeight;
+  // Measure the screen-space radius by projecting a point offset by the body's world radius.
+  _projUp.copy(rec.object.position)
+    .add(camera.up.clone().normalize().multiplyScalar(rec.object.scale.x))
+    .project(camera);
+  const screenR = Math.max(4, Math.abs((_projUp.y - _projPos.y) * 0.5 * innerHeight));
+  const pad = 6;
+  const total = screenR * 2 + pad * 2;
+  editHalo.style.left = (cx - screenR - pad) + 'px';
+  editHalo.style.top  = (cy - screenR - pad) + 'px';
+  editHalo.style.width = total + 'px';
+  editHalo.style.height = total + 'px';
+  editHalo.style.display = 'block';
+}
 
 let last = performance.now();
 function tick(now) {
@@ -329,13 +349,14 @@ function tick(now) {
 
   lodRuntime.tick(camera);
 
-  // Selection halo: glowing yellow shell around the selected body. Reused; just repositioned.
-  if (selected) {
-    selectionHalo.visible = true;
-    selectionHalo.position.copy(selected.object.position);
-    selectionHalo.scale.setScalar(selected.object.scale.x * 1.45);
+  // Edit-mode HTML halo: project the body's bounding sphere to screen space, draw a blue
+  // circle around it (like a Google-Slides selection border).
+  if (editingId) {
+    const rec = records.find(r => r.id === editingId);
+    if (!rec) { editingId = null; editHalo.style.display = 'none'; }
+    else updateEditHalo(rec);
   } else {
-    selectionHalo.visible = false;
+    editHalo.style.display = 'none';
   }
 
   if (selected) {

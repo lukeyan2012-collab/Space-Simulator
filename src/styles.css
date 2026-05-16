@@ -55,3 +55,4 @@ canvas#scene { position: fixed; inset: 0; display: block; }
 .bg-selector { position: fixed; bottom: 20px; left: 20px; padding: 6px 10px; background: rgba(15,15,25,0.7); border: 1px solid #2a2a3a; border-radius: 6px; font-size: 11px; backdrop-filter: blur(6px); z-index: 5; }
 .bg-selector label { display: flex; align-items: center; gap: 8px; letter-spacing: 0.05em; }
 .bs-select { background: rgba(15,15,25,0.5); color: #ddd; border: 1px solid #2a2a3a; border-radius: 4px; padding: 4px 6px; font-size: 12px; cursor: pointer; }
+.edit-halo { position: fixed; border: 2.5px solid #4ab2ff; border-radius: 50%; pointer-events: none; box-shadow: 0 0 0 1px rgba(74,178,255,0.25), 0 0 14px rgba(74,178,255,0.45); z-index: 4; }
