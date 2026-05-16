@@ -84,6 +84,11 @@ const RADIUS_EXP = 0.38;
 const MIN_RENDER_R = 0.6;
 function visibleRadius(spec) {
   const r = Math.max(1e-9, (spec.realRadius_m ?? 0) / EARTH_REAL_R_M);
+  // Nebulae are diffuse clouds, not bodies — render them much larger than the power-law gives
+  // so the volumetric shader has room to look 3D.
+  if (spec.procedural === 'nebula') {
+    return Math.max(30, EARTH_RENDER_R * Math.pow(r, RADIUS_EXP) * 5);
+  }
   return Math.max(MIN_RENDER_R, EARTH_RENDER_R * Math.pow(r, RADIUS_EXP));
 }
 
@@ -241,6 +246,50 @@ const sizeSlider = createSizeSlider({
 function currentSizeMult(rec) {
   const base = rec._baseScale || rec.sceneScale || 1;
   return (rec.object.scale.x / base) || 1;
+}
+
+// Anything that gravitationally absorbs other bodies on contact.
+function isAbsorber(body) {
+  return body?.procedural === 'star'
+      || body?.procedural === 'black_hole'
+      || body?.procedural === 'neutron_star'
+      || body?.procedural === 'white_dwarf';
+}
+
+const TRAP_DURATION_MS = 3000;
+
+// Start a 3-second absorption animation: lerp the body toward the absorber, shrink to zero,
+// spin faster as it falls in, then destroy. Visual only — engine mass set to ~0 so the
+// trapped body doesn't perturb anything else while it's being sucked in.
+function trapBody(rec, absorber) {
+  if (rec._trapping) return;
+  rec._trapping = {
+    absorber,
+    start: performance.now(),
+    startPos: rec.object.position.clone(),
+    startScale: rec.object.scale.x,
+  };
+  engine.setState(rec.id, { velocity: [0, 0, 0], mass: 0.01 });
+  // If the camera was following the doomed body, release so the view doesn't pull into the absorber.
+  if (followedId === rec.id) { cam.release(); followedId = null; sizeSlider.hide(); }
+}
+
+// Scan for non-absorber bodies overlapping any absorber and start the trap animation.
+function checkAbsorptions() {
+  const absorbers = records.filter(r => isAbsorber(r.body));
+  if (!absorbers.length) return;
+  for (const rec of records) {
+    if (rec._trapping) continue;
+    if (isAbsorber(rec.body)) continue;
+    for (const ab of absorbers) {
+      const dx = rec.object.position.x - ab.object.position.x;
+      const dy = rec.object.position.y - ab.object.position.y;
+      const dz = rec.object.position.z - ab.object.position.z;
+      const d2 = dx*dx + dy*dy + dz*dz;
+      const rsum = rec.object.scale.x + ab.object.scale.x;
+      if (d2 < rsum * rsum) { trapBody(rec, ab); break; }
+    }
+  }
 }
 
 function goSupernova(rec, newMass) {
@@ -401,9 +450,33 @@ function tick(now) {
   }
 
   for (const rec of records) {
+    if (rec._trapping) continue; // animated separately below
     const s = engine.getState(rec.id); if (!s) continue;
     rec.syncFromEngine(s, camera);
     rec.spin(totalSimSec); // axial rotation; scales with the time-slider, pauses at 0
+  }
+
+  // Check for new absorptions (star / black-hole vs anything else). Visual only —
+  // the trap animation is in real-time so it plays even when the simulation is paused.
+  checkAbsorptions();
+
+  // Animate trapped bodies: lerp inward toward absorber, shrink, spin faster. Destroy at t≥1.
+  // Iterate from the end so destroyBody splicing during loop doesn't skip elements.
+  for (let i = records.length - 1; i >= 0; i--) {
+    const rec = records[i];
+    const trap = rec._trapping;
+    if (!trap) continue;
+    const u = (performance.now() - trap.start) / TRAP_DURATION_MS;
+    if (u >= 1) { destroyBody(rec.id); continue; }
+    const eased = u * u; // accelerate as it falls in
+    rec.object.position.lerpVectors(trap.startPos, trap.absorber.object.position, eased);
+    rec.object.scale.setScalar(trap.startScale * (1 - 0.92 * u));
+    rec.object.rotateY(0.18 + 0.6 * u); // accelerating spin
+    // Keep engine position synced so physics doesn't try to pull the body somewhere else.
+    const px = rec.object.position.x / DISTANCE_SCALE;
+    const py = rec.object.position.y / DISTANCE_SCALE;
+    const pz = rec.object.position.z / DISTANCE_SCALE;
+    engine.setState(rec.id, { position: [px, py, pz], velocity: [0, 0, 0] });
   }
 
   lodRuntime.tick(camera);

@@ -15,18 +15,19 @@ const NOISE3D = /* glsl */`
   }
   float fbm3(vec3 p) {
     float a = 0.5, s = 0.0;
-    for (int i = 0; i < 5; i++) { s += a * n3(p); p *= 2.05; a *= 0.5; }
+    for (int i = 0; i < 6; i++) { s += a * n3(p); p *= 2.05; a *= 0.5; }
     return s;
   }
 `;
 
-// Generate a vibrant color (high saturation, mid lightness). Stays out of muddy gray territory.
+// Generate a vibrant color (high saturation, mid-bright lightness). Stays away from gray.
 function vibrant() {
-  return new Color().setHSL(Math.random(), 0.9 + Math.random() * 0.1, 0.5 + Math.random() * 0.12);
+  return new Color().setHSL(Math.random(), 0.92 + Math.random() * 0.08, 0.55 + Math.random() * 0.12);
 }
 
-// Three-color volumetric nebula. Two fBm fields blend three vibrant colors, so each instance is
-// a unique mix and the result rarely looks two-tone. Additive blending so overlapping clouds
+// Three-color volumetric nebula. Two fBm fields blend three vibrant colors, with a radial
+// alpha falloff that makes the surface fade away from the edge — gives the illusion of an
+// actual 3D cloud rather than a hard sphere shell. Additive blending so overlapping clouds
 // layer their colors together.
 export function createNebulaMaterial() {
   return new ShaderMaterial({
@@ -54,13 +55,20 @@ export function createNebulaMaterial() {
       varying vec3 vP;
       ${NOISE3D}
       void main() {
-        vec3 p = vP * 1.2 + vec3(uSeed);
-        float d  = fbm3(p + vec3(0.0, uTime * 0.03, 0.0));   // overall density
-        float t1 = fbm3(p * 1.7 + vec3(uSeed * 0.1));        // first color blend
-        float t2 = fbm3(p * 2.3 + vec3(0.0, 0.0, uSeed));    // second color blend
-        float a  = smoothstep(0.38, 0.85, d);
-        vec3 col = mix(mix(uColorA, uColorB, t1), uColorC, t2 * 0.6);
-        gl_FragColor = vec4(col * 1.15, a * 0.7);
+        vec3 p = vP * 1.5 + vec3(uSeed);
+        float d  = fbm3(p + vec3(0.0, uTime * 0.025, 0.0));            // density field
+        float t1 = fbm3(p * 1.8 + vec3(uSeed * 0.1, 0.0, 0.0));        // color blend A↔B
+        float t2 = fbm3(p * 2.4 + vec3(0.0, uSeed * 0.3, uSeed * 0.7));// color blend → C
+
+        // Soft radial falloff: fragments near the sphere center keep their alpha; near the
+        // boundary they fade to 0. Makes the volumetric look right — no hard sphere silhouette.
+        float r = length(vP);
+        float radial = 1.0 - smoothstep(0.45, 1.0, r);
+
+        float a = smoothstep(0.32, 0.78, d) * radial;
+        if (a < 0.005) discard;
+        vec3 col = mix(mix(uColorA, uColorB, t1), uColorC, t2 * 0.65);
+        gl_FragColor = vec4(col * 1.4, a * 0.85);
       }
     `,
   });
