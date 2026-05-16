@@ -12,7 +12,7 @@ import { createVerletEngine } from '@/physics/verlet-engine.js';
 import {
   G, DISTANCE_SCALE, TIME_BASE_SECONDS_PER_REAL_SECOND, MAX_SUBSTEPS_PER_FRAME,
 } from '@/physics/constants.js';
-import { Raycaster, Vector2, AmbientLight, PointLight } from 'three';
+import { Raycaster, Vector2, AmbientLight, PointLight, Mesh, SphereGeometry, MeshBasicMaterial, BackSide, AdditiveBlending } from 'three';
 import manifest from '@/data/bodies.json';
 import { createLoadingOrchestrator } from '@/loader/loading-orchestrator.js';
 import { createModelLoader } from '@/loader/model-loader.js';
@@ -20,13 +20,10 @@ import { createBodyRecord, makePlaceholder } from '@/lod/body-record.js';
 import { createLodRuntime } from '@/lod/lod-runtime.js';
 import { chooseRemnant, triggerSupernova } from '@/fx/supernova.js';
 import { createDragResize } from '@/interaction/drag-resize.js';
-import { findFirstCollision, resolveCollision } from '@/physics/collisions.js';
 import { createResetPresets } from '@/ui/reset-presets.js';
 import { createAutosave } from '@/persistence/autosave.js';
 import { createToaster } from '@/ui/toast.js';
 import { PRESETS } from '@/data/presets.js';
-import { createSpacetimeGrid } from '@/render/spacetime-grid.js';
-import { createBackgroundSelector } from '@/ui/background-selector.js';
 
 const _testCanvas = document.createElement('canvas');
 if (!_testCanvas.getContext('webgl2')) {
@@ -36,27 +33,30 @@ if (!_testCanvas.getContext('webgl2')) {
 
 const canvas = document.getElementById('scene');
 const { scene, camera, renderer } = createScene(canvas, { width: innerWidth, height: innerHeight });
-const starfield = createStarfield();
-scene.add(starfield);
+scene.add(createStarfield());
 
-// Background-mode plane (gridlines / spacetime warp). Hidden by default; toggled by selector.
-const spacetimeGrid = createSpacetimeGrid();
-scene.add(spacetimeGrid.mesh);
+// Lights — bumped from earlier (ambient 0.4 / point 1.5) so the dark sides of GLB planets
+// aren't a black void. Ambient gives a base brightness everywhere, the no-decay PointLight at
+// the Sun's position adds directional sunlight that scales.
+scene.add(new AmbientLight(0xffffff, 1.1));
+scene.add(new PointLight(0xffffff, 2.8, 0, 0));
 
-createBackgroundSelector({
-  initial: 'stars',
-  onChange: (mode) => {
-    starfield.visible = (mode === 'stars');
-    spacetimeGrid.setMode(mode); // 'grid' | 'warp' shows the plane; 'stars' hides it
-  },
-});
-
-// Lights so MeshStandardMaterial-based GLBs render properly. PointLight at the Sun's position
-// gives a sun-lit look (decay=0 so its full intensity reaches Earth at 1 AU); ambient fills the
-// dark side so it's not pitch black. Stage 4 will replace this with selective bloom + emissive
-// star material when procedural shaders come in.
-scene.add(new AmbientLight(0xffffff, 0.4));
-scene.add(new PointLight(0xffffff, 1.5, 0, 0));
+// Selection halo — a translucent yellow backside sphere drawn around whatever body is selected.
+// Reused across selections; visibility toggled in tick().
+const selectionHalo = new Mesh(
+  new SphereGeometry(1, 32, 32),
+  new MeshBasicMaterial({
+    color: 0xffe24a,
+    transparent: true,
+    opacity: 0.35,
+    side: BackSide,
+    depthWrite: false,
+    blending: AdditiveBlending,
+  }),
+);
+selectionHalo.visible = false;
+selectionHalo.renderOrder = 1; // draw after opaque geometry
+scene.add(selectionHalo);
 
 const cam = createCameraController(camera, renderer.domElement);
 
@@ -188,17 +188,13 @@ createSidebar({
   onTapAdd: (id) => dragDrop.armForTapAdd(id),
 });
 
-// Click + drag a body to resize it (and scale its mass by r³). Stars going past 8 M☉ trigger
-// the supernova chain automatically (no separate slider/dialog now that mass-controls is gone).
+// Click + drag the SELECTED body to resize (mass scales as r³). Stars past 8 M☉ go supernova
+// automatically. Unselected bodies aren't draggable — click once to highlight first.
 createDragResize({
   camera, domElement: renderer.domElement, cameraControls: cam,
   getRecords: () => records,
+  getSelected: () => selected,
   engine,
-  onSelect: (rec) => {
-    if (selected) selected.selected = false;
-    selected = rec;
-    if (selected) selected.selected = true;
-  },
   onSupernova: (rec, newMass) => goSupernova(rec, newMass),
 });
 
@@ -246,7 +242,7 @@ function loadPreset(name) {
   }
 }
 
-createResetPresets({ onReset: clearAll, onPreset: loadPreset });
+createResetPresets({ onPreset: loadPreset });
 
 autosave = createAutosave({
   key: 'space-sim:sandbox',
@@ -303,17 +299,15 @@ window.addEventListener('keydown', (e) => {
     cam.release();
     followedId = null;
     if (selected) { selected.selected = false; selected = null; props.update(null); }
+    return;
+  }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selected) {
+    // Don't fire while typing in the sidebar search.
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    destroyBody(selected.id);
   }
 });
-
-// Reset View button.
-const resetBtn = document.createElement('button');
-resetBtn.className = 'reset-view-btn';
-resetBtn.textContent = 'Reset View';
-resetBtn.title = 'Restore default camera (also: ESC releases follow)';
-resetBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
-resetBtn.addEventListener('click', () => cam.resetView());
-document.getElementById('ui-root').appendChild(resetBtn);
 
 let last = performance.now();
 function tick(now) {
@@ -333,17 +327,16 @@ function tick(now) {
     rec.spin(totalSimSec); // axial rotation; scales with the time-slider, pauses at 0
   }
 
-  // Resolve at most one collision per frame; the next frame will catch any cascade.
-  const pair = findFirstCollision(records);
-  if (pair) {
-    const { destroy } = resolveCollision(pair[0], pair[1]);
-    for (const r of destroy) destroyBody(r.id);
-  }
-
   lodRuntime.tick(camera);
 
-  // Keep the spacetime-grid plane in sync with body positions/masses (cheap; uniforms only).
-  if (spacetimeGrid.mesh.visible) spacetimeGrid.updateBodies(records);
+  // Selection halo: glowing yellow shell around the selected body. Reused; just repositioned.
+  if (selected) {
+    selectionHalo.visible = true;
+    selectionHalo.position.copy(selected.object.position);
+    selectionHalo.scale.setScalar(selected.object.scale.x * 1.45);
+  } else {
+    selectionHalo.visible = false;
+  }
 
   if (selected) {
     const s = engine.getState(selected.id);

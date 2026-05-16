@@ -8,15 +8,17 @@ import { SUPERNOVA_THRESHOLD_KG } from '@/physics/constants.js';
 // Capture-phase pointerdown lets us suppress OrbitControls' bubble-phase handler when the user
 // presses on a body.
 //
-// onSelect(rec)         - called when a body is hit on pointerdown, so the props panel reflects it.
+// getSelected()         - returns the currently-selected record (or null). Drag-resize only
+//                          engages when the press lands on the already-selected body — clicking
+//                          an unselected body just selects it (via the normal click flow).
 // onSupernova(rec, m)   - called whenever a Star's effective mass crosses 8 M☉ during a drag.
 export function createDragResize({
   camera,
   domElement,
   cameraControls,
   getRecords,
+  getSelected = () => null,
   engine,
-  onSelect = () => {},
   onSupernova = () => {},
 }) {
   const ray = new Raycaster();
@@ -45,7 +47,11 @@ export function createDragResize({
     if (e.button !== 0) return;
     const rec = pick(e.clientX, e.clientY);
     if (!rec) return;
-    // Block OrbitControls from rotating on body-press. We re-enable on pointerup.
+    // Only resize the *currently-selected* body. Clicking an unselected body just falls
+    // through to the normal click handler (which will select it); the user then clicks +
+    // drags again to actually resize.
+    if (rec !== getSelected()) return;
+    // Block OrbitControls from rotating during the resize drag.
     e.stopImmediatePropagation();
     drag = {
       rec,
@@ -55,7 +61,6 @@ export function createDragResize({
       controlsWasEnabled: cameraControls.controls.enabled,
       moved: false,
     };
-    onSelect(rec); // body becomes the selected one immediately
   }
 
   function onPointerMove(e) {
