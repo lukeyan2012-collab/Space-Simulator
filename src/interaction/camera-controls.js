@@ -6,8 +6,9 @@ const STOP_EPS = 0.05;
 
 export function createCameraController(camera, domElement) {
   const controls = new OrbitControls(camera, domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.08;
+  // Damping off — 1:1 mouse → camera, no glide after release. Drag 500 px → camera moves
+  // 500 px worth of arc immediately and stops the instant you let go.
+  controls.enableDamping = false;
   controls.minDistance = 1;
   controls.maxDistance = 5000;
 

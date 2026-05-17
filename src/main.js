@@ -576,28 +576,56 @@ renderer.domElement.addEventListener('click', (e) => {
     e.stopImmediatePropagation();
   }
 }, { capture: true });
-renderer.domElement.addEventListener('pointerdown', (e) => {
-  if (!ghost || e.button !== 0) return;
-  // Engage drag if pointer is near the ghost — generous radius for usability.
+// Position-drag fallback: project pointer onto a camera-facing plane through the ghost's
+// CURRENT position, which preserves depth so the ghost slides on a 2D plane parallel to
+// the screen.
+function pointerToMovePos(e) {
+  if (!ghost) return null;
   const r = ndcOfEvent(e);
   const center = ghost.mesh.position;
-  const grabR = (ghost.mesh.scale.x || 1) * 2.5;
-  const o = r.ray.origin, d = r.ray.direction;
-  const oc = new Vector3().subVectors(o, center);
-  const b = oc.dot(d);
-  const c = oc.dot(oc) - grabR * grabR;
-  if (b * b - c < 0) return; // ray doesn't pass close to ghost — let OrbitControls handle it
+  const planeNormal = camera.getWorldDirection(new Vector3()).negate();
+  const denom = planeNormal.dot(r.ray.direction);
+  if (Math.abs(denom) < 1e-6) return null;
+  const t = planeNormal.dot(new Vector3().subVectors(center, r.ray.origin)) / denom;
+  if (t <= 0) return null;
+  return r.ray.direction.clone().multiplyScalar(t).add(r.ray.origin);
+}
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (!ghost || e.button !== 0) return;
+  // World-transforms must be fresh before raycasting against the arrow children.
+  ghost.mesh.updateMatrixWorld(true);
+  const r = ndcOfEvent(e);
+  // Priority: hit the arrow head/shaft (direction-drag) > hit the ghost body (move-drag).
+  // If neither, fall through and let OrbitControls handle the drag (camera orbit/pan).
+  const arrowMeshes = [ghost.arrow?.head, ghost.arrow?.shaft].filter(Boolean);
+  const arrowHits = arrowMeshes.length ? r.intersectObjects(arrowMeshes, false) : [];
+  const bodyHits  = r.intersectObject(ghost.mesh, false);
+  if (!arrowHits.length && !bodyHits.length) return;
   e.stopImmediatePropagation();
-  suppressNextClick = true; // don't let the synthesized click deselect / re-focus on release
-  arrowDrag = { prevControlsEnabled: cam.controls.enabled };
+  suppressNextClick = true;
+  arrowDrag = {
+    type: arrowHits.length ? 'arrow' : 'move',
+    prevControlsEnabled: cam.controls.enabled,
+  };
   cam.controls.enabled = false;
-  const dir = pointToDirection(e);
-  if (dir) ghost.setDirectionFromVector(dir);
+  if (arrowDrag.type === 'arrow') {
+    const dir = pointToDirection(e);
+    if (dir) ghost.setDirectionFromVector(dir);
+  } else {
+    const p = pointerToMovePos(e);
+    if (p) { ghost.setPosition(p); schedulePrediction(); }
+  }
 }, { capture: true });
 window.addEventListener('pointermove', (e) => {
   if (!arrowDrag || !ghost) return;
-  const dir = pointToDirection(e);
-  if (dir) ghost.setDirectionFromVector(dir);
+  if (arrowDrag.type === 'arrow') {
+    const dir = pointToDirection(e);
+    if (dir) ghost.setDirectionFromVector(dir);
+  } else {
+    const p = pointerToMovePos(e);
+    if (p) { ghost.setPosition(p); schedulePrediction(); }
+  }
 });
 window.addEventListener('pointerup', () => {
   if (!arrowDrag) return;
