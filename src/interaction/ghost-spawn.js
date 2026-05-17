@@ -1,44 +1,44 @@
-import { Mesh, SphereGeometry, MeshBasicMaterial, ArrowHelper, Vector3, BackSide } from 'three';
+import { Mesh, SphereGeometry, MeshBasicMaterial, ArrowHelper, Vector3 } from 'three';
 import { DISTANCE_SCALE } from '@/physics/constants.js';
 
-// A ghost is a transparent preview of a body that the user can configure before committing.
-// It is rendered into the scene but NOT added to the verlet engine — no gravity, no
-// collisions. When the user clicks "Insert" the parent UI calls `getCommit()` and uses the
-// returned spec/position/velocity to spawn a real body.
-//
-// The arrow is anchored at the body's surface (tail) pointing outward in the launch direction.
-// Direction is parameterised by azimuth + elevation (degrees) — both come from sliders.
-export function createGhost({ spec, position, scene, baseRadius, defaultSpeed = 10000 }) {
-  // Body ghost: wireframe + semi-transparent so the user can see through it.
-  const bodyMat = new MeshBasicMaterial({
+// A ghost is a transparent preview of a body the user can configure before committing.
+// The arrow tail is at the body's surface, head points outward in the launch direction.
+// External callers drive direction either via setDirectionFromVector (arrow drag) or
+// setAzimuth/setElevation (slider). onDirectionChange fires whenever direction changes, so
+// the host UI can keep sliders in sync with arrow drags.
+export function createGhost({
+  spec,
+  position,
+  scene,
+  baseRadius,
+  defaultSpeed = 10000,
+  defaultDirection = null,
+  onDirectionChange = () => {},
+}) {
+  // Solid translucent sphere coloured with the body's defaultColor — recognisable but
+  // clearly a preview (not a real object). The host shows the body's name in the panel.
+  const mat = new MeshBasicMaterial({
     color: spec.defaultColor || '#888',
     transparent: true,
-    opacity: 0.35,
-    wireframe: true,
-    side: BackSide,
+    opacity: 0.45,
+    depthWrite: false,
   });
-  const fillMat = new MeshBasicMaterial({
-    color: spec.defaultColor || '#888',
-    transparent: true,
-    opacity: 0.15,
-  });
-  const mesh = new Mesh(new SphereGeometry(1, 32, 32), fillMat);
-  const wire = new Mesh(new SphereGeometry(1.001, 24, 24), bodyMat);
-  mesh.add(wire);
+  const mesh = new Mesh(new SphereGeometry(1, 32, 32), mat);
   mesh.scale.setScalar(baseRadius);
   mesh.position.set(position[0], position[1], position[2]);
+  mesh.userData.isGhost = true;
   scene.add(mesh);
 
-  // Launch direction arrow, child of mesh so it inherits scale/position. Length is in the
-  // body's unit-scale (1 = one body radius), so visual length scales with the ghost size.
-  const ARROW_BASE_LEN = 1.6;
+  // Arrow: tail anchored just past the body's surface (in unit-sphere coords, that's at r=1).
+  // Length scales with speed so faster launches show a longer arrow.
+  const ARROW_BASE_LEN = 1.8;
   const arrow = new ArrowHelper(
-    new Vector3(0, 0, -1),  // initial direction
-    new Vector3(0, 0, 0),   // origin at body center
+    new Vector3(0, 0, -1),
+    new Vector3(0, 0, 0),
     ARROW_BASE_LEN,
     0xffe24a,
-    0.4,                    // head length
-    0.22,                   // head width
+    0.45,
+    0.25,
   );
   mesh.add(arrow);
 
@@ -46,9 +46,14 @@ export function createGhost({ spec, position, scene, baseRadius, defaultSpeed = 
     sizeMult: 1,
     spinMult: 1,
     speed: defaultSpeed,
-    azimuthDeg: 0,    // 0 = +X, 90 = -Z, 180 = -X, 270 = +Z (in ecliptic plane)
-    elevationDeg: 0,  // 0 = ecliptic plane; positive tilts up (+Y)
+    azimuthDeg: 0,
+    elevationDeg: 0,
   };
+  if (defaultDirection && defaultDirection.lengthSq() > 0) {
+    const d = defaultDirection.clone().normalize();
+    state.azimuthDeg = ((Math.atan2(-d.z, d.x) * 180 / Math.PI) % 360 + 360) % 360;
+    state.elevationDeg = Math.asin(Math.max(-1, Math.min(1, d.y))) * 180 / Math.PI;
+  }
 
   function directionVector() {
     const az = state.azimuthDeg * Math.PI / 180;
@@ -57,25 +62,32 @@ export function createGhost({ spec, position, scene, baseRadius, defaultSpeed = 
   }
 
   function update() {
-    mesh.scale.setScalar(baseRadius * state.sizeMult);
     const dir = directionVector();
     arrow.setDirection(dir);
-    // Arrow length scales (slightly) with speed so the user gets visual feedback.
-    const lenMult = 1 + Math.min(2, state.speed / 25000);
-    arrow.setLength(ARROW_BASE_LEN * lenMult, 0.4, 0.22);
+    const lenMult = 1 + Math.min(2.5, state.speed / 18000);
+    arrow.setLength(ARROW_BASE_LEN * lenMult, 0.45, 0.25);
   }
 
-  function setSize(m)     { state.sizeMult = m;   update(); }
-  function setSpin(m)     { state.spinMult = m; }
-  function setSpeed(s)    { state.speed = s;     update(); }
-  function setAzimuth(a)  { state.azimuthDeg = a;   update(); }
-  function setElevation(e){ state.elevationDeg = e; update(); }
+  function setSize(m)  { state.sizeMult = m; mesh.scale.setScalar(baseRadius * m); }
+  function setSpin(m)  { state.spinMult = m; }
+  function setSpeed(s) { state.speed = s; update(); }
+  function setAzimuth(a)   { state.azimuthDeg = ((a % 360) + 360) % 360; update(); }
+  function setElevation(e) { state.elevationDeg = Math.max(-90, Math.min(90, e)); update(); }
+
+  // Set direction from a world-space vector. Computes az/el and notifies the host UI.
+  function setDirectionFromVector(vec) {
+    if (!vec || vec.lengthSq() === 0) return;
+    const n = vec.clone().normalize();
+    state.azimuthDeg = ((Math.atan2(-n.z, n.x) * 180 / Math.PI) % 360 + 360) % 360;
+    state.elevationDeg = Math.asin(Math.max(-1, Math.min(1, n.y))) * 180 / Math.PI;
+    update();
+    onDirectionChange(state.azimuthDeg, state.elevationDeg);
+  }
 
   function destroy() {
     scene.remove(mesh);
-    wire.geometry.dispose(); wire.material.dispose();
-    mesh.geometry.dispose(); mesh.material.dispose();
-    // ArrowHelper owns its own lines / cone material; dispose them.
+    mesh.geometry.dispose();
+    mesh.material.dispose();
     arrow.line?.geometry?.dispose();
     arrow.line?.material?.dispose();
     arrow.cone?.geometry?.dispose();
@@ -89,16 +101,20 @@ export function createGhost({ spec, position, scene, baseRadius, defaultSpeed = 
       mesh.position.z / DISTANCE_SCALE,
     ];
     const dir = directionVector();
-    const vel = [dir.x * state.speed, dir.y * state.speed, dir.z * state.speed];
     return {
       spec,
       position: physPos,
-      velocity: vel,
+      velocity: [dir.x * state.speed, dir.y * state.speed, dir.z * state.speed],
       sizeMult: state.sizeMult,
       spinMult: state.spinMult,
     };
   }
 
   update();
-  return { mesh, setSize, setSpin, setSpeed, setAzimuth, setElevation, destroy, getCommit, state };
+  return {
+    mesh, state,
+    setSize, setSpin, setSpeed, setAzimuth, setElevation,
+    setDirectionFromVector,
+    destroy, getCommit,
+  };
 }

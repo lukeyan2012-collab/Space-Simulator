@@ -13,7 +13,10 @@ export function circularOrbitVelocity(point, center, M, upVec) {
   return tangent.multiplyScalar(speed);
 }
 
-export function createDragDrop({ scene, camera, domElement, manifest, getRecords, getCamTarget, spawn, onGhostStart }) {
+// Single drop-handler interface: `onDrop(body, positionScene, defaultVelocityMs)` is called
+// when a sidebar item is released over the canvas. The host (main.js) decides whether to
+// open the ghost configurator or spawn the body directly.
+export function createDragDrop({ scene, camera, domElement, manifest, getRecords, getCamTarget, onDrop }) {
   const ray = new Raycaster();
   const mouse = new Vector2();
   const plane = new Plane();
@@ -64,30 +67,20 @@ export function createDragDrop({ scene, camera, domElement, manifest, getRecords
     if (!body) return;
     const sceneUnits = projectClientToScene(clientX, clientY, new Vector3());
     if (!sceneUnits) return;
-    // Drop now opens the ghost-configure flow rather than spawning immediately. The host
-    // (main.js) is responsible for committing the ghost or cancelling it.
-    if (typeof onGhostStart === 'function') {
-      const neighbor = findNeighborMass(sceneUnits);
-      let defaultSpeed = 0;
-      if (neighbor) {
-        const neighborPosM = new Vector3(...neighbor.object.position.toArray()).divideScalar(DISTANCE_SCALE);
-        const positionM = sceneUnits.clone().divideScalar(DISTANCE_SCALE);
-        const upVec = camera.up.clone();
-        const v = circularOrbitVelocity(positionM, neighborPosM, neighbor.body.realMass_kg, upVec);
-        defaultSpeed = v.length();
-      }
-      onGhostStart(body, [sceneUnits.x, sceneUnits.y, sceneUnits.z], { defaultSpeed });
-    } else {
-      const positionM = sceneUnits.clone().divideScalar(DISTANCE_SCALE).toArray();
-      let velocityMs = [0,0,0];
-      const neighbor = findNeighborMass(sceneUnits);
-      if (neighbor) {
-        const neighborPosM = new Vector3(...neighbor.object.position.toArray()).divideScalar(DISTANCE_SCALE);
-        const upVec = camera.up.clone();
-        const v = circularOrbitVelocity(new Vector3(...positionM), neighborPosM, neighbor.body.realMass_kg, upVec);
-        velocityMs = v.toArray();
-      }
-      spawn(body, positionM, velocityMs);
+
+    // Compute a default orbital velocity if dropping near a massive neighbor — the host can
+    // use it as-is (direct spawn) or as a starting value for the ghost configurator.
+    let velocityMs = [0, 0, 0];
+    const neighbor = findNeighborMass(sceneUnits);
+    if (neighbor) {
+      const positionM = sceneUnits.clone().divideScalar(DISTANCE_SCALE);
+      const neighborPosM = new Vector3(...neighbor.object.position.toArray()).divideScalar(DISTANCE_SCALE);
+      const upVec = camera.up.clone();
+      velocityMs = circularOrbitVelocity(positionM, neighborPosM, neighbor.body.realMass_kg, upVec).toArray();
+    }
+
+    if (typeof onDrop === 'function') {
+      onDrop(body, [sceneUnits.x, sceneUnits.y, sceneUnits.z], velocityMs);
     }
     if (ghost) { scene.remove(ghost); ghost = null; }
   }

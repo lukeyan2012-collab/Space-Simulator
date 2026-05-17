@@ -89,7 +89,7 @@ function visibleRadius(spec) {
   // Nebulae are diffuse clouds, not bodies — render them much larger than the power-law gives
   // so the volumetric shader has room to look 3D.
   if (spec.procedural === 'nebula') {
-    return Math.max(50, EARTH_RENDER_R * Math.pow(r, RADIUS_EXP) * 6);
+    return Math.max(18, EARTH_RENDER_R * Math.pow(r, RADIUS_EXP) * 2.5);
   }
   return Math.max(MIN_RENDER_R, EARTH_RENDER_R * Math.pow(r, RADIUS_EXP));
 }
@@ -188,6 +188,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 let selected = null;
 let hoverGrace = null;
 let followedId = null;     // body the camera is currently following (dblclick to pin, ESC to release)
+let prevTimeValue = 0.5;   // remembered slider value so spacebar can toggle pause cleanly
 
 createSelectionRaycaster({
   camera, domElement: renderer.domElement,
@@ -214,18 +215,17 @@ createSelectionRaycaster({
   },
 });
 
-// Ghost-spawn flow: dropping a body from the sidebar creates a transparent ghost preview the
-// user can configure (size / spin / speed / direction) before clicking Insert to commit.
+// Categories that use the ghost-configure flow on drop. Everything else (Nebulae, Star
+// Remnants, Satellites) places immediately using the auto-computed default velocity.
+const GHOST_CATEGORIES = new Set(['Stars', 'Planets', 'Moons', 'Asteroids']);
+
 let ghost = null;
-function visibleRadiusFor(spec) { return visibleRadius(spec); } // forward ref for the closure
 const ghostPanel = createGhostPanel({
-  onSize:      (v) => ghost?.setSize(v),
-  onSpin:      (v) => ghost?.setSpin(v),
-  onSpeed:     (v) => ghost?.setSpeed(v),
-  onAzimuth:   (v) => ghost?.setAzimuth(v),
-  onElevation: (v) => ghost?.setElevation(v),
-  onCancel:    () => cancelGhost(),
-  onInsert:    () => commitGhost(),
+  onSize:   (v) => ghost?.setSize(v),
+  onSpin:   (v) => ghost?.setSpin(v),
+  onSpeed:  (v) => ghost?.setSpeed(v),
+  onCancel: () => cancelGhost(),
+  onInsert: () => commitGhost(),
 });
 function cancelGhost() {
   if (!ghost) return;
@@ -237,11 +237,10 @@ function commitGhost() {
   if (!ghost) return;
   const c = ghost.getCommit();
   const rec = spawnFromManifest(c.spec, c.position, c.velocity);
-  // Apply the user's size / spin overrides post-spawn.
   if (rec) {
     const base = rec._baseScale || rec.sceneScale || 1;
     rec.object.scale.setScalar(base * c.sizeMult);
-    rec._spinMult = c.spinMult; // body-record.spin() consults this if present
+    rec._spinMult = c.spinMult;
     if (c.sizeMult !== 1) {
       const newMass = rec.body.realMass_kg * c.sizeMult * c.sizeMult * c.sizeMult;
       engine.setState(rec.id, { mass: newMass });
@@ -256,18 +255,26 @@ const dragDrop = createDragDrop({
   scene, camera, domElement: renderer.domElement, manifest,
   getRecords: () => records,
   getCamTarget: () => cam.target,
-  spawn: (body, pos, vel) => spawnFromManifest(body, pos, vel),
-  onGhostStart: (body, positionScene, { defaultSpeed }) => {
-    // Cancel any previous ghost first so we don't pile them up.
+  onDrop: (body, positionScene, defaultVelocityMs) => {
+    if (!GHOST_CATEGORIES.has(body.category)) {
+      // Non-{Stars/Planets/Moons/Asteroids} → place immediately, no ghost.
+      const positionM = positionScene.map(p => p / DISTANCE_SCALE);
+      spawnFromManifest(body, positionM, defaultVelocityMs);
+      return;
+    }
+    // Open the ghost configurator with default direction taken from the orbital velocity.
     cancelGhost();
-    const r = visibleRadiusFor(body);
+    const r = visibleRadius(body);
+    const speed = Math.hypot(defaultVelocityMs[0], defaultVelocityMs[1], defaultVelocityMs[2]);
+    const defaultDir = speed > 0
+      ? new Vector3(defaultVelocityMs[0] / speed, defaultVelocityMs[1] / speed, defaultVelocityMs[2] / speed)
+      : null;
     ghost = createGhost({
       spec: body, position: positionScene, scene, baseRadius: r,
-      defaultSpeed: Math.max(0, defaultSpeed || 0),
+      defaultSpeed: speed || 10000,
+      defaultDirection: defaultDir,
     });
-    ghostPanel.show(body.displayName, {
-      size: 1, spin: 1, speed: defaultSpeed || 10000, az: 0, el: 0,
-    });
+    ghostPanel.show(body.displayName, { size: 1, spin: 1, speed: speed || 10000 });
   },
 });
 createSidebar({
@@ -445,6 +452,78 @@ function smartFocus(rec) {
   sizeSlider.show(currentSizeMult(rec), rec.body.displayName);
 }
 
+// Arrow-drag direction setter for the ghost. While a ghost is open, pressing on the canvas
+// over (or near) the ghost engages a drag that rotates the launch arrow to point at the
+// dragged cursor position projected onto a sphere around the ghost center. OrbitControls is
+// disabled during the drag so the camera doesn't fight the user.
+const arrowRay = new Raycaster();
+const arrowNdc = new Vector2();
+let arrowDrag = null; // { prevControlsEnabled }
+function ndcOfEvent(e) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  arrowNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  arrowNdc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  arrowRay.setFromCamera(arrowNdc, camera);
+  return arrowRay;
+}
+function pointToDirection(e) {
+  if (!ghost) return null;
+  const r = ndcOfEvent(e);
+  const center = ghost.mesh.position;
+  // First try a sphere around the ghost (preferred — drag-on-surface feel).
+  const sphereR = (ghost.mesh.scale.x || 1) * 1.3;
+  const out = new Vector3();
+  // Three.js Ray.intersectSphere needs a Sphere instance; construct inline.
+  // Use the simpler closed-form: solve | (origin + t * dir) - center |^2 = r^2.
+  const o = r.ray.origin, d = r.ray.direction;
+  const oc = new Vector3().subVectors(o, center);
+  const b = oc.dot(d);
+  const c = oc.dot(oc) - sphereR * sphereR;
+  const disc = b * b - c;
+  if (disc >= 0) {
+    const t = -b - Math.sqrt(disc); // near intersection
+    if (t > 0) {
+      out.copy(d).multiplyScalar(t).add(o);
+      return out.sub(center);
+    }
+  }
+  // Fallback: project pointer onto a camera-facing plane through ghost center.
+  const planeNormal = camera.getWorldDirection(new Vector3()).negate();
+  const denom = planeNormal.dot(d);
+  if (Math.abs(denom) < 1e-6) return null;
+  const t2 = planeNormal.dot(new Vector3().subVectors(center, o)) / denom;
+  if (t2 <= 0) return null;
+  out.copy(d).multiplyScalar(t2).add(o);
+  return out.sub(center);
+}
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (!ghost || e.button !== 0) return;
+  // Engage drag if pointer is near the ghost — generous radius for usability.
+  const r = ndcOfEvent(e);
+  const center = ghost.mesh.position;
+  const grabR = (ghost.mesh.scale.x || 1) * 2.5;
+  const o = r.ray.origin, d = r.ray.direction;
+  const oc = new Vector3().subVectors(o, center);
+  const b = oc.dot(d);
+  const c = oc.dot(oc) - grabR * grabR;
+  if (b * b - c < 0) return; // ray doesn't pass close to ghost — let OrbitControls handle it
+  e.stopImmediatePropagation();
+  arrowDrag = { prevControlsEnabled: cam.controls.enabled };
+  cam.controls.enabled = false;
+  const dir = pointToDirection(e);
+  if (dir) ghost.setDirectionFromVector(dir);
+}, { capture: true });
+window.addEventListener('pointermove', (e) => {
+  if (!arrowDrag || !ghost) return;
+  const dir = pointToDirection(e);
+  if (dir) ghost.setDirectionFromVector(dir);
+});
+window.addEventListener('pointerup', () => {
+  if (!arrowDrag) return;
+  cam.controls.enabled = arrowDrag.prevControlsEnabled;
+  arrowDrag = null;
+});
+
 // Double-click a body → smart focus. Double-click empty → release follow + hide slider.
 const ray = new Raycaster();
 const ndc = new Vector2();
@@ -482,6 +561,17 @@ window.addEventListener('keydown', (e) => {
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     destroyBody(followedId);
+  }
+  if (e.code === 'Space' || e.key === ' ') {
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    e.preventDefault();
+    if (slider.isPaused) {
+      slider.set(prevTimeValue || 0.5);
+    } else {
+      prevTimeValue = slider.value;
+      slider.set(0);
+    }
   }
 });
 
