@@ -197,7 +197,15 @@ createSelectionRaycaster({
     if (selected) selected.selected = false;
     selected = rec;
     if (selected) selected.selected = true;
-    if (!selected) props.update(null);
+    if (rec) {
+      smartFocus(rec); // single-click both selects AND pins/auto-zooms
+    } else {
+      // empty-space click → release everything
+      props.update(null);
+      cam.release();
+      followedId = null;
+      sizeSlider.hide();
+    }
   },
   onHover: (rec, prev) => {
     if (prev) {
@@ -408,6 +416,33 @@ function loadPreset(name) {
 
 createResetPresets({ onReset: clearAll, onPreset: loadPreset });
 
+// View-orientation buttons. Reposition the camera straight above the current target (Top) or
+// straight to the +X side (Side), preserving the current camera-to-target distance.
+function setView(mode) {
+  const target = cam.target.clone();
+  const offset = new Vector3().subVectors(camera.position, target);
+  const dist = Math.max(1, offset.length());
+  if (mode === 'top') {
+    // Tiny +Z offset avoids the polar singularity of OrbitControls (straight-down is a pole).
+    camera.position.set(target.x, target.y + dist, target.z + 0.001);
+  } else { // side
+    camera.position.set(target.x + dist, target.y, target.z);
+  }
+  camera.up.set(0, 1, 0);
+  camera.lookAt(target);
+  cam.controls.update();
+}
+const viewBar = document.createElement('div');
+viewBar.className = 'view-controls';
+viewBar.innerHTML = `
+  <button type="button" class="vc-top" title="View from above (top-down)">Top</button>
+  <button type="button" class="vc-side" title="View from the side">Side</button>`;
+document.getElementById('ui-root').appendChild(viewBar);
+viewBar.addEventListener('pointerdown', (e) => e.stopPropagation());
+viewBar.addEventListener('click', (e) => e.stopPropagation());
+viewBar.querySelector('.vc-top').addEventListener('click', () => setView('top'));
+viewBar.querySelector('.vc-side').addEventListener('click', () => setView('side'));
+
 autosave = createAutosave({
   key: 'space-sim:sandbox',
   getSnapshot: () => records.map(r => {
@@ -496,6 +531,13 @@ function pointToDirection(e) {
   out.copy(d).multiplyScalar(t2).add(o);
   return out.sub(center);
 }
+let suppressNextClick = false;
+renderer.domElement.addEventListener('click', (e) => {
+  if (suppressNextClick) {
+    suppressNextClick = false;
+    e.stopImmediatePropagation();
+  }
+}, { capture: true });
 renderer.domElement.addEventListener('pointerdown', (e) => {
   if (!ghost || e.button !== 0) return;
   // Engage drag if pointer is near the ghost — generous radius for usability.
@@ -508,6 +550,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   const c = oc.dot(oc) - grabR * grabR;
   if (b * b - c < 0) return; // ray doesn't pass close to ghost — let OrbitControls handle it
   e.stopImmediatePropagation();
+  suppressNextClick = true; // don't let the synthesized click deselect / re-focus on release
   arrowDrag = { prevControlsEnabled: cam.controls.enabled };
   cam.controls.enabled = false;
   const dir = pointToDirection(e);
@@ -524,23 +567,8 @@ window.addEventListener('pointerup', () => {
   arrowDrag = null;
 });
 
-// Double-click a body → smart focus. Double-click empty → release follow + hide slider.
-const ray = new Raycaster();
-const ndc = new Vector2();
-renderer.domElement.addEventListener('dblclick', (e) => {
-  const rect = renderer.domElement.getBoundingClientRect();
-  ndc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-  ndc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-  ray.setFromCamera(ndc, camera);
-  const pickables = records.map(r => r.object);
-  const hits = ray.intersectObjects(pickables, true);
-  if (!hits.length) { cam.release(); followedId = null; sizeSlider.hide(); return; }
-  let n = hits[0].object;
-  while (n.parent && !records.some(r => r.object === n)) n = n.parent;
-  const rec = records.find(r => r.object === n);
-  if (rec) smartFocus(rec);
-  else { cam.release(); followedId = null; sizeSlider.hide(); }
-});
+// Single-click handles everything now (select + smart-focus). Selection is wired through the
+// createSelectionRaycaster callback above — no separate dblclick handler needed.
 
 window.addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
