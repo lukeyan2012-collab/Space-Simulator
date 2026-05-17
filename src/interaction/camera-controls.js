@@ -6,9 +6,13 @@ const STOP_EPS = 0.05;
 
 export function createCameraController(camera, domElement) {
   const controls = new OrbitControls(camera, domElement);
-  // Damping off — 1:1 mouse → camera, no glide after release. Drag 500 px → camera moves
-  // 500 px worth of arc immediately and stops the instant you let go.
+  // Damping off — no glide after release. Lower rotate/pan speeds for finer pointing
+  // control: a given mouse drag covers less arc, so it's easier to settle on a specific
+  // view direction without overshooting.
   controls.enableDamping = false;
+  controls.rotateSpeed = 0.55;
+  controls.panSpeed    = 0.6;
+  controls.zoomSpeed   = 0.9;
   controls.minDistance = 1;
   controls.maxDistance = 5000;
 

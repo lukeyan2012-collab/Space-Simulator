@@ -8,9 +8,9 @@ export function makePlaceholder(body) {
   return new Mesh(g, m);
 }
 
-export function createBodyRecord(body, mesh, sceneScale) {
+export function createBodyRecord(body, mesh, sceneScale, id = body.id) {
   return {
-    id: body.id,
+    id,
     body,
     object: mesh,
     // 'placeholder' = sphere is showing, no GLB loaded yet. First LOD decision will trigger

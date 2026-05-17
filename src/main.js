@@ -26,7 +26,6 @@ import { createModelLoader } from '@/loader/model-loader.js';
 import { createBodyRecord, makePlaceholder } from '@/lod/body-record.js';
 import { createLodRuntime } from '@/lod/lod-runtime.js';
 import { chooseRemnant, triggerSupernova } from '@/fx/supernova.js';
-import { createResetPresets } from '@/ui/reset-presets.js';
 import { createSizeSlider } from '@/ui/size-slider.js';
 import { createGhost } from '@/interaction/ghost-spawn.js';
 import { createGhostPanel } from '@/ui/ghost-panel.js';
@@ -121,17 +120,26 @@ function makeBodyMesh(spec) {
   return makePlaceholder(spec);
 }
 
+// Allow multiple of the same body to coexist by giving each spawn a unique runtime id.
+// The body's *spec* (Mercury, Earth, …) is still kept on `rec.body` for display + restoration.
+let _spawnCounter = 0;
+function freshUid(specId) {
+  _spawnCounter += 1;
+  return `${specId}#${_spawnCounter}`;
+}
+
 function spawnFromManifest(spec, position = [0,0,0], velocity = [0,0,0]) {
+  const uid = freshUid(spec.id);
   const mesh = makeBodyMesh(spec);
   const r = visibleRadius(spec);
   mesh.scale.setScalar(r);
-  mesh.userData.bodyId = spec.id;
+  mesh.userData.bodyId = uid;
   // Apply axial tilt once at spawn (e.g. Uranus 97.77° → spins on its side).
   // Subsequent spin() uses local-Y rotation, so it composes with this tilt.
   if (spec.axialTilt_deg) mesh.rotateZ(spec.axialTilt_deg * Math.PI / 180);
   scene.add(mesh);
-  engine.addBody({ id: spec.id, mass: spec.realMass_kg, position, velocity });
-  const rec = createBodyRecord(spec, mesh, r);
+  engine.addBody({ id: uid, mass: spec.realMass_kg, position, velocity });
+  const rec = createBodyRecord(spec, mesh, r, uid);
   rec.overlays = [];
 
   // Procedural overlays (rings/clouds) — children of the body's mesh so they inherit
@@ -207,6 +215,7 @@ createSelectionRaycaster({
       cam.release();
       followedId = null;
       sizeSlider.hide();
+      refreshFollowedOrbit();
     }
   },
   onHover: (rec, prev) => {
@@ -274,6 +283,7 @@ function cancelGhost() {
   ghostPanel.hide();
   trajectoryLine.clear();
   if (predictionTimer) { clearTimeout(predictionTimer); predictionTimer = null; }
+  refreshFollowedOrbit();
 }
 function commitGhost() {
   if (!ghost) return;
@@ -293,6 +303,7 @@ function commitGhost() {
   ghostPanel.hide();
   trajectoryLine.clear();
   if (predictionTimer) { clearTimeout(predictionTimer); predictionTimer = null; }
+  refreshFollowedOrbit();
 }
 
 const dragDrop = createDragDrop({
@@ -427,6 +438,7 @@ function destroyBody(id) {
     followedId = null;
     cam.release();
     sizeSlider.hide();
+    refreshFollowedOrbit();
   }
   engine.removeBody(id);
   removeRecord(id);
@@ -441,6 +453,7 @@ function clearAll() {
   props.update(null);
   cam.release();
   sizeSlider.hide();
+  refreshFollowedOrbit();
 }
 
 function loadPreset(name) {
@@ -452,7 +465,14 @@ function loadPreset(name) {
   }
 }
 
-createResetPresets({ onReset: clearAll, onPreset: loadPreset });
+// Single right-aligned flex toolbar that owns all the top-right controls. Keeps everything
+// perfectly aligned without juggling per-widget pixel offsets.
+const topBar = document.createElement('div');
+topBar.className = 'top-right-bar';
+document.getElementById('ui-root').appendChild(topBar);
+topBar.addEventListener('pointerdown', (e) => e.stopPropagation());
+topBar.addEventListener('click', (e) => e.stopPropagation());
+topBar.addEventListener('dblclick', (e) => e.stopPropagation());
 
 // View-orientation buttons. Reposition the camera straight above the current target (Top) or
 // straight to the +X side (Side), preserving the current camera-to-target distance.
@@ -470,22 +490,58 @@ function setView(mode) {
   camera.lookAt(target);
   cam.controls.update();
 }
-const viewBar = document.createElement('div');
-viewBar.className = 'view-controls';
-viewBar.innerHTML = `
-  <button type="button" class="vc-top" title="View from above (top-down)">Top</button>
-  <button type="button" class="vc-side" title="View from the side">Side</button>`;
-document.getElementById('ui-root').appendChild(viewBar);
-viewBar.addEventListener('pointerdown', (e) => e.stopPropagation());
-viewBar.addEventListener('click', (e) => e.stopPropagation());
-viewBar.querySelector('.vc-top').addEventListener('click', () => setView('top'));
-viewBar.querySelector('.vc-side').addEventListener('click', () => setView('side'));
+
+// "Show orbits" toggle — when on, predicts the orbit of the currently focused body and
+// renders it as a colored trail. Updates whenever focus changes or the user clicks the
+// button. Uses the same trajectoryLine that the ghost uses, since only one is shown at a time.
+let showOrbits = false;
+function refreshFollowedOrbit() {
+  if (ghost) return; // ghost owns the trajectory while it's open
+  if (!showOrbits || !followedId) { trajectoryLine.clear(); return; }
+  const rec = records.find(r => r.id === followedId);
+  if (!rec) { trajectoryLine.clear(); return; }
+  const others = records.map(r => ({ id: r.id, realRadius_m: r.body?.realRadius_m || 0 }));
+  const result = predictOrbit({
+    engine,
+    existingBodyId: rec.id,
+    otherBodies: others,
+  });
+  trajectoryLine.setTrajectory(result.trajectory, result.status);
+}
+
+topBar.innerHTML = `
+  <button type="button" class="tb-btn show-orbit-btn" title="Toggle predicted orbit line for the focused body">Show orbit</button>
+  <button type="button" class="tb-btn vc-top" title="View from above (top-down)">Top</button>
+  <button type="button" class="tb-btn vc-side" title="View from the side">Side</button>
+  <button type="button" class="tb-btn rp-reset" title="Clear all bodies">Reset</button>
+  <select class="tb-select rp-preset" title="Load a preset">
+    <option value="">Load preset…</option>
+    <option value="empty">Empty</option>
+    <option value="inner_planets">Inner Planets</option>
+    <option value="jupiter_system">Jupiter system</option>
+    <option value="solar_system">Solar System</option>
+  </select>`;
+const showOrbitBtn = topBar.querySelector('.show-orbit-btn');
+topBar.querySelector('.vc-top').addEventListener('click', () => setView('top'));
+topBar.querySelector('.vc-side').addEventListener('click', () => setView('side'));
+topBar.querySelector('.rp-reset').addEventListener('click', () => clearAll());
+topBar.querySelector('.rp-preset').addEventListener('change', (e) => {
+  if (e.target.value) loadPreset(e.target.value);
+  e.target.value = '';
+});
+showOrbitBtn.addEventListener('click', () => {
+  showOrbits = !showOrbits;
+  showOrbitBtn.classList.toggle('tb-btn-active', showOrbits);
+  refreshFollowedOrbit();
+});
 
 autosave = createAutosave({
   key: 'space-sim:sandbox',
   getSnapshot: () => records.map(r => {
     const s = engine.getState(r.id);
-    return s ? { id: r.id, mass: s.mass, position: s.position, velocity: s.velocity } : null;
+    // Store the SPEC id (so we can look it up in the manifest on restore) plus current
+    // physics state. Runtime uids are regenerated on respawn.
+    return s ? { specId: r.body.id, mass: s.mass, position: s.position, velocity: s.velocity } : null;
   }).filter(Boolean),
   debounceMs: 5000,
 });
@@ -496,9 +552,11 @@ if (_prev && Array.isArray(_prev) && _prev.length > 0
     && (typeof window === 'undefined' || window.confirm('Restore previous session?'))) {
   clearAll();
   for (const s of _prev) {
-    const spec = manifest.bodies.find(b => b.id === s.id);
-    if (spec) spawnFromManifest(spec, s.position, s.velocity);
-    if (spec && s.mass != null) engine.setState(s.id, { mass: s.mass });
+    const lookup = s.specId ?? s.id; // back-compat with older snapshots
+    const spec = manifest.bodies.find(b => b.id === lookup);
+    if (!spec) continue;
+    const rec = spawnFromManifest(spec, s.position, s.velocity);
+    if (rec && s.mass != null) engine.setState(rec.id, { mass: s.mass });
   }
 } else if (_prev) {
   // user declined or snapshot was empty — discard stale data
@@ -523,6 +581,7 @@ function smartFocus(rec) {
   cam.follow(() => rec.object.position);
   followedId = rec.id;
   sizeSlider.show(currentSizeMult(rec), rec.body.displayName);
+  refreshFollowedOrbit();
 }
 
 // Arrow-drag direction setter for the ghost. While a ghost is open, pressing on the canvas
@@ -648,6 +707,7 @@ window.addEventListener('keydown', (e) => {
     followedId = null;
     sizeSlider.hide();
     if (selected) { selected.selected = false; selected = null; props.update(null); }
+    refreshFollowedOrbit();
     return;
   }
   if ((e.key === 'Delete' || e.key === 'Backspace') && followedId) {

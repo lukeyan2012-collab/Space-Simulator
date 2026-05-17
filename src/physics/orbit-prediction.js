@@ -58,46 +58,62 @@ function signedAngleBetween(v1, v2, planeNormal) {
   return dot(x, planeNormal) >= 0 ? ang : -ang;
 }
 
+// Two modes:
+//   - ghostBody → trace a body that ISN'T yet in the engine (used by the spawn configurator)
+//   - existingBodyId → trace a body that's ALREADY in the engine (used by the "Show orbits"
+//     toggle for a selected/followed body)
+//
 // `otherBodies` is the runtime list of records — we need both `id` (matches engine) and
 // `realRadius_m` for collision tests, since the engine doesn't carry radii.
 //
 // Returns:
 //   { status, trajectory, message, attractorId, accumulatedAngle, finalRelDistance }
-export function predictOrbit({ engine, ghostBody, otherBodies, options = {} }) {
+export function predictOrbit({ engine, ghostBody, existingBodyId, otherBodies, options = {} }) {
   const opts = { ...DEFAULTS, ...options };
-  if (!engine || !ghostBody) {
-    return { status: 'prediction_limit', trajectory: [], message: 'No engine or ghost provided.' };
+  if (!engine || (!ghostBody && !existingBodyId)) {
+    return { status: 'prediction_limit', trajectory: [], message: 'No engine / target.' };
   }
   const sim = engine.clone();
-  const ghostId = '__predict_ghost__';
-  sim.addBody({
-    id: ghostId,
-    mass: ghostBody.mass,
-    position: [...ghostBody.position],
-    velocity: [...ghostBody.velocity],
-  });
+  let targetId, targetRadius_m;
+  if (existingBodyId) {
+    targetId = existingBodyId;
+    const meta = otherBodies.find(b => b.id === existingBodyId);
+    targetRadius_m = +(meta?.realRadius_m) || 0;
+  } else {
+    targetId = '__predict_ghost__';
+    sim.addBody({
+      id: targetId,
+      mass: ghostBody.mass,
+      position: [...ghostBody.position],
+      velocity: [...ghostBody.velocity],
+    });
+    targetRadius_m = +(ghostBody.realRadius_m) || 0;
+  }
 
   // Look-up of real radii by id for collision tests.
   const radiiById = new Map();
   for (const b of otherBodies) radiiById.set(b.id, +b.realRadius_m || 0);
 
-  const initialOthers = sim.all().filter(b => b.id !== ghostId);
-  const attractorSeed = pickAttractor(ghostBody.position, initialOthers);
+  const initState = sim.getState(targetId);
+  if (!initState) {
+    return { status: 'prediction_limit', trajectory: [], message: 'Target not in sim.' };
+  }
+  const initialOthers = sim.all().filter(b => b.id !== targetId);
+  const attractorSeed = pickAttractor(initState.position, initialOthers);
   if (!attractorSeed) {
-    return { status: 'escape', trajectory: [[...ghostBody.position]], message: 'No attractor — straight-line flight.' };
+    return { status: 'escape', trajectory: [[...initState.position]], message: 'No attractor — straight-line flight.' };
   }
   const attractorId = attractorSeed.id;
 
   // Initial relative geometry → defines the orbital plane via angular momentum.
-  const initRel  = sub(ghostBody.position, attractorSeed.position);
-  const initVel  = sub(ghostBody.velocity, attractorSeed.velocity);
+  const initRel  = sub(initState.position, attractorSeed.position);
+  const initVel  = sub(initState.velocity, attractorSeed.velocity);
   const initR    = magnitude(initRel);
   const hVec     = cross(initRel, initVel);
   const hMag     = magnitude(hVec);
   if (hMag < 1e-3) {
-    // Trajectory has zero angular momentum → radial fall.
     return {
-      status: 'collision', trajectory: [[...ghostBody.position]],
+      status: 'collision', trajectory: [[...initState.position]],
       message: `Will fall straight into ${attractorId}.`, attractorId,
     };
   }
@@ -105,17 +121,17 @@ export function predictOrbit({ engine, ghostBody, otherBodies, options = {} }) {
 
   const dt        = (opts.maxPredictionDays * SEC_PER_DAY) / opts.maxPredictionSteps;
   const escapeR   = initR * opts.escapeDistanceMultiplier;
-  const ghostR    = (+ghostBody.realRadius_m || 0) * opts.collisionRadiusMultiplier;
+  const targetR   = targetRadius_m * opts.collisionRadiusMultiplier;
 
-  const trajectory = [[...ghostBody.position]];
+  const trajectory = [[...initState.position]];
   let prevRelProj  = projectOnPlane(initRel, planeNormal);
   let accumAngle   = 0;
 
   for (let step = 0; step < opts.maxPredictionSteps; step++) {
     sim.step(dt);
-    const g = sim.getState(ghostId);
+    const g = sim.getState(targetId);
     if (!g) {
-      return { status: 'prediction_limit', trajectory, message: 'Sim lost the ghost.', attractorId };
+      return { status: 'prediction_limit', trajectory, message: 'Sim lost the target.', attractorId };
     }
     trajectory.push([...g.position]);
 
@@ -126,10 +142,10 @@ export function predictOrbit({ engine, ghostBody, otherBodies, options = {} }) {
 
     // Collision against any real body.
     for (const other of sim.all()) {
-      if (other.id === ghostId) continue;
+      if (other.id === targetId) continue;
       const d = magnitude(sub(g.position, other.position));
       const r = (radiiById.get(other.id) || 0) * opts.collisionRadiusMultiplier;
-      if (d < r + ghostR) {
+      if (d < r + targetR) {
         return {
           status: 'collision', trajectory,
           message: `Collides with ${other.id} at t≈${((step * dt) / SEC_PER_DAY).toFixed(1)}d.`,

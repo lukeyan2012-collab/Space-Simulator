@@ -29,8 +29,8 @@ canvas#scene { position: fixed; inset: 0; display: block; }
 .sb-item:hover { background: #1a1a28; border-color: #2a2a3a; }
 .sb-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 
-/* Properties panel (top-right, row 1) ---------------------------------- */
-.props-panel { position: fixed; top: 16px; right: 16px; width: 280px; background: rgba(15,15,25,0.78); border: 1px solid #2a2a3a; border-radius: 8px; padding: 12px; font-size: 12px; backdrop-filter: blur(6px); z-index: 5; }
+/* Properties panel (top-right, row 2 — below the top toolbar) ---------- */
+.props-panel { position: fixed; top: 64px; right: 16px; width: 280px; background: rgba(15,15,25,0.78); border: 1px solid #2a2a3a; border-radius: 8px; padding: 12px; font-size: 12px; backdrop-filter: blur(6px); z-index: 5; }
 .props-panel h3 { margin: 0 0 4px; font-size: 14px; }
 .props-panel .props-desc { opacity: 0.7; margin: 0 0 8px; font-size: 11px; }
 .props-panel dl { display: grid; grid-template-columns: 80px 1fr; gap: 4px 12px; margin: 0; }
@@ -38,15 +38,16 @@ canvas#scene { position: fixed; inset: 0; display: block; }
 .props-panel dd { margin: 0; word-break: break-all; }
 .props-empty { opacity: 0.5; font-size: 12px; text-align: center; padding: 20px 0; }
 
-/* Reset + presets (top-right, row 2, just under props-panel) ----------- */
-.reset-presets { position: fixed; top: 16px; right: 312px; display: flex; gap: 8px; z-index: 5; align-items: center; }
-.reset-presets button, .reset-presets select { background: rgba(15,15,25,0.7); border: 1px solid #2a2a3a; color: #ddd; border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; backdrop-filter: blur(6px); }
-.reset-presets button:hover, .reset-presets select:hover { background: rgba(40,40,60,0.85); }
-
-/* View-orientation buttons (just left of reset+presets) ---------------- */
-.view-controls { position: fixed; top: 16px; right: 478px; display: flex; gap: 6px; z-index: 5; align-items: center; }
-.view-controls button { background: rgba(15,15,25,0.7); border: 1px solid #2a2a3a; color: #ddd; border-radius: 6px; padding: 6px 12px; font-size: 12px; letter-spacing: 0.05em; cursor: pointer; backdrop-filter: blur(6px); }
-.view-controls button:hover { background: rgba(40,40,60,0.85); }
+/* Single top-right toolbar: Show-orbit + Top/Side view + Reset + preset dropdown ---- */
+.top-right-bar { position: fixed; top: 16px; right: 16px; display: flex; gap: 8px; align-items: center; z-index: 6; }
+.top-right-bar .tb-btn, .top-right-bar .tb-select {
+  background: rgba(15,15,25,0.78); border: 1px solid #2a2a3a; color: #ddd;
+  border-radius: 6px; padding: 6px 12px; font-size: 12px; letter-spacing: 0.04em;
+  cursor: pointer; backdrop-filter: blur(6px); transition: background 120ms;
+}
+.top-right-bar .tb-btn:hover, .top-right-bar .tb-select:hover { background: rgba(40,40,60,0.92); }
+.top-right-bar .tb-btn-active { background: rgba(70,110,160,0.95); border-color: #557; color: #fff; }
+.top-right-bar .tb-btn-active:hover { background: rgba(90,140,200,1); }
 
 /* "Adjust size" slider (top-center, only shown when a body is pinned) -- */
 .size-slider { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); width: min(380px, 50vw); padding: 8px 14px; background: rgba(15,15,25,0.78); border: 1px solid #2a2a3a; border-radius: 8px; font-size: 12px; backdrop-filter: blur(6px); z-index: 5; }
