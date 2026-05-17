@@ -30,6 +30,8 @@ import { createResetPresets } from '@/ui/reset-presets.js';
 import { createSizeSlider } from '@/ui/size-slider.js';
 import { createGhost } from '@/interaction/ghost-spawn.js';
 import { createGhostPanel } from '@/ui/ghost-panel.js';
+import { predictOrbit } from '@/physics/orbit-prediction.js';
+import { createTrajectoryLine } from '@/render/trajectory-line.js';
 import { createAutosave } from '@/persistence/autosave.js';
 import { createToaster } from '@/ui/toast.js';
 import { PRESETS } from '@/data/presets.js';
@@ -228,18 +230,50 @@ createSelectionRaycaster({
 const GHOST_CATEGORIES = new Set(['Stars', 'Planets', 'Moons', 'Asteroids']);
 
 let ghost = null;
+const trajectoryLine = createTrajectoryLine(scene);
 const ghostPanel = createGhostPanel({
-  onSize:   (v) => ghost?.setSize(v),
-  onSpin:   (v) => ghost?.setSpin(v),
-  onSpeed:  (v) => ghost?.setSpeed(v),
+  onSize:   (v) => { ghost?.setSize(v);  schedulePrediction(); },
+  onSpin:   (v) => { ghost?.setSpin(v); },
+  onSpeed:  (v) => { ghost?.setSpeed(v); schedulePrediction(); },
   onCancel: () => cancelGhost(),
   onInsert: () => commitGhost(),
 });
+
+// Re-run orbit prediction whenever the ghost configuration changes. Debounced so the slider
+// drag doesn't trigger a re-sim on every tick. Updates the colored trajectory line + panel.
+let predictionTimer = null;
+function schedulePrediction() {
+  if (!ghost) return;
+  if (predictionTimer) clearTimeout(predictionTimer);
+  predictionTimer = setTimeout(runPrediction, 90);
+}
+function runPrediction() {
+  predictionTimer = null;
+  if (!ghost) return;
+  const c = ghost.getCommit();
+  const ghostMass = c.spec.realMass_kg * c.sizeMult * c.sizeMult * c.sizeMult;
+  const ghostRadius = (c.spec.realRadius_m || 0) * c.sizeMult;
+  const otherBodies = records.map(r => ({ id: r.id, realRadius_m: r.body?.realRadius_m || 0 }));
+  const result = predictOrbit({
+    engine,
+    ghostBody: {
+      mass: ghostMass,
+      position: c.position,
+      velocity: c.velocity,
+      realRadius_m: ghostRadius,
+    },
+    otherBodies,
+  });
+  trajectoryLine.setTrajectory(result.trajectory, result.status);
+  ghostPanel.setOrbitStatus(result.status, result.message);
+}
 function cancelGhost() {
   if (!ghost) return;
   ghost.destroy();
   ghost = null;
   ghostPanel.hide();
+  trajectoryLine.clear();
+  if (predictionTimer) { clearTimeout(predictionTimer); predictionTimer = null; }
 }
 function commitGhost() {
   if (!ghost) return;
@@ -257,6 +291,8 @@ function commitGhost() {
   ghost.destroy();
   ghost = null;
   ghostPanel.hide();
+  trajectoryLine.clear();
+  if (predictionTimer) { clearTimeout(predictionTimer); predictionTimer = null; }
 }
 
 const dragDrop = createDragDrop({
@@ -281,8 +317,10 @@ const dragDrop = createDragDrop({
       spec: body, position: positionScene, scene, baseRadius: r,
       defaultSpeed: speed || 10000,
       defaultDirection: defaultDir,
+      onDirectionChange: () => schedulePrediction(),
     });
     ghostPanel.show(body.displayName, { size: 1, spin: 1, speed: speed || 10000 });
+    schedulePrediction(); // initial prediction with default direction + speed
   },
 });
 createSidebar({

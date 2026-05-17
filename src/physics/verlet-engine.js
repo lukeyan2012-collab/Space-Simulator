@@ -45,6 +45,21 @@ export function createVerletEngine() {
 
   function clear() { bodies.clear(); dirty = true; }
 
+  // Snapshot the current state into a fresh engine. Used by orbit prediction so we can
+  // simulate forward without disturbing the live world.
+  function clone() {
+    const fresh = createVerletEngine();
+    for (const b of bodies.values()) {
+      fresh.addBody({
+        id: b.id,
+        mass: b.mass,
+        position: [b.position[0], b.position[1], b.position[2]],
+        velocity: [b.velocity[0], b.velocity[1], b.velocity[2]],
+      });
+    }
+    return fresh;
+  }
+
   function computeAccelerations() {
     const arr = [...bodies.values()];
     for (const b of arr) { b.acc[0] = 0; b.acc[1] = 0; b.acc[2] = 0; }
@@ -91,5 +106,5 @@ export function createVerletEngine() {
     }
   }
 
-  return { addBody, removeBody, getState, setState, all, clear, step };
+  return { addBody, removeBody, getState, setState, all, clear, step, clone };
 }

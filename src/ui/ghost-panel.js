@@ -30,6 +30,8 @@ export function createGhostPanel({
       <span class="gp-speed-val gp-val">10 km/s</span>
     </label>
 
+    <div class="gp-orbit-status gps-prediction_limit">Adjust speed and direction…</div>
+
     <div class="gp-buttons">
       <button class="gp-cancel" type="button">Cancel</button>
       <button class="gp-insert" type="button">Insert</button>
@@ -68,6 +70,19 @@ export function createGhostPanel({
   root.querySelector('.gp-cancel').addEventListener('click', () => onCancel());
   root.querySelector('.gp-insert').addEventListener('click', () => onInsert());
 
+  const statusEl = root.querySelector('.gp-orbit-status');
+  const STATUS_LABELS = {
+    orbit:            'Confirmed orbit',
+    escape:           'Escape trajectory',
+    collision:        'Collision predicted',
+    prediction_limit: 'Prediction limit reached — no full orbit confirmed.',
+  };
+  function setOrbitStatus(status, message) {
+    statusEl.className = 'gp-orbit-status gps-' + (status || 'prediction_limit');
+    const label = STATUS_LABELS[status] ?? 'Computing…';
+    statusEl.textContent = message ? `${label} — ${message}` : label;
+  }
+
   function show(name, defaults = {}) {
     nameEl.textContent = name || '';
     const d = { size: 1, spin: 1, speed: 10000, ...defaults };
@@ -78,5 +93,5 @@ export function createGhostPanel({
   }
   function hide() { root.hidden = true; }
 
-  return { show, hide };
+  return { show, hide, setOrbitStatus };
 }
