@@ -6,11 +6,13 @@ import fs from 'node:fs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ASSETS_DIR = path.resolve(__dirname, '3D models');
 
-// Explicit middleware for /models/* that streams files straight from "3D models/".
-// We previously relied on a Windows junction at public/models, but the browser was getting
-// Vite's SPA fallback HTML for those URLs (PowerShell GET worked fine — likely a browser
-// cache or middleware-ordering quirk). Serving directly is more reliable cross-OS and
-// makes the cache-control explicit.
+// Bridges the out-of-tree "3D models/" folder to the URL path /models/*.
+//
+// - In dev (`vite`): an HTTP middleware streams the files directly. Avoids relying on a
+//   junction at public/models which behaved inconsistently on Windows.
+// - In build (`vite build`): a writeBundle hook copies every file into dist/models/, so the
+//   production bundle is fully self-contained and any static host (Render, Netlify, GH Pages)
+//   serves them at the same /models/* URLs without extra config.
 const serveModelsPlugin = {
   name: 'serve-3d-models',
   configureServer(server) {
@@ -27,6 +29,23 @@ const serveModelsPlugin = {
       });
       fs.createReadStream(fullPath).pipe(res);
     });
+  },
+  // Copy all GLBs into dist/models/ so production deploys ship the assets.
+  writeBundle(outputOptions) {
+    const outDir = outputOptions.dir || path.resolve(__dirname, 'dist');
+    const destDir = path.join(outDir, 'models');
+    if (!fs.existsSync(ASSETS_DIR)) {
+      this.warn(`serve-3d-models: source folder missing at ${ASSETS_DIR} — nothing to copy.`);
+      return;
+    }
+    fs.mkdirSync(destDir, { recursive: true });
+    let copied = 0;
+    for (const entry of fs.readdirSync(ASSETS_DIR, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      fs.copyFileSync(path.join(ASSETS_DIR, entry.name), path.join(destDir, entry.name));
+      copied += 1;
+    }
+    this.info(`serve-3d-models: copied ${copied} model file(s) → ${path.relative(__dirname, destDir)}`);
   },
 };
 
