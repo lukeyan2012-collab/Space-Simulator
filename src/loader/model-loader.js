@@ -24,6 +24,10 @@ export function createModelLoader({ basePath = '/models/', GLTFLoaderImpl = GLTF
 
   function key(name, lod) { return `${name.toLowerCase()}::${lod}`; }
 
+  // Quietly try one URL. Adds to missCache on failure but does NOT fire onMiss — the
+  // load() caller decides whether the WHOLE chain failed and only then notifies the user.
+  // Otherwise a body like ISS (which only exists as iss.glb, no _4k / _1k variants) would
+  // produce two toasts for the suffixed attempts before iss.glb succeeds.
   async function tryLoadOne(filename) {
     const url = basePath + filename;
     if (missCache.has(url)) return null;
@@ -35,17 +39,18 @@ export function createModelLoader({ basePath = '/models/', GLTFLoaderImpl = GLTF
         fetchUrl,
         (gltf) => resolve(gltf.scene),
         undefined,
-        (err) => {
-          console.error('[model-loader] failed', url, '—', err?.message ?? err, err);
-          if (!missCache.has(url)) {
-            try { onMiss(filename); } catch {}
-          }
+        () => {
+          // Expected when a body has no _4k/_1k variant — keep the noise out of the console.
           missCache.add(url);
           resolve(null);
         },
       );
     });
   }
+
+  // Per-assetName notification gate so we don't toast the same body twice across reloads
+  // within a session.
+  const notifiedMisses = new Set();
 
   async function load(name, lod /* 'high' | 'low' */) {
     const k = key(name, lod);
@@ -57,6 +62,12 @@ export function createModelLoader({ basePath = '/models/', GLTFLoaderImpl = GLTF
       for (const file of candidates) {
         const obj = await tryLoadOne(file);
         if (obj) { cache.set(k, obj); return obj; }
+      }
+      // Whole chain missed — only NOW notify the user, and only once per asset.
+      if (!notifiedMisses.has(name)) {
+        notifiedMisses.add(name);
+        console.warn('[model-loader] no GLB found for', name, '— tried:', candidates.join(', '));
+        try { onMiss(`${name}.glb`); } catch {}
       }
       cache.set(k, null);
       return null;

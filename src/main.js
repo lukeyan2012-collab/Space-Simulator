@@ -594,10 +594,13 @@ if (_prev && Array.isArray(_prev) && _prev.length > 0
 // starfield instead.
 const FOCUS_FRACTION = 0.28; // target body diameter as a fraction of screen height
 
-// Pick a unit vector pointing from the focused body towards a region of empty space.
-// We sum gravitational-pull vectors from every OTHER body (mass / distance²) — the
-// resultant points to where the visual clutter is — then place the camera in the
-// opposite direction. Falls back to current camera direction if no other bodies exist.
+// Pick a unit vector for "where the camera should sit relative to the focused body" so the
+// line of sight (camera → body → past body) doesn't cross any other entity. Weighting uses
+// real radius / distance (≈ apparent angular size) so a big bright Sun beats a tiny moon.
+//
+// Geometry: if we put the camera on the SAME side as the clutter, then looking past the
+// body continues AWAY from the clutter — meaning the clutter ends up behind the camera,
+// not behind the body. The focused body is silhouetted against the starfield.
 function pickClearViewDirection(focused) {
   const target = focused.object.position;
   const clutter = new Vector3();
@@ -607,16 +610,15 @@ function pickClearViewDirection(focused) {
     const d = new Vector3().subVectors(rec.object.position, target);
     const dist = d.length();
     if (dist < 1e-6) continue;
-    // weight ∝ apparent angular footprint = mass-as-proxy / dist² (use realMass to keep
-    // it independent of visual scale). Bigger / closer bodies dominate the result.
-    const weight = (rec.body?.realMass_kg || 1) / (dist * dist);
+    const radius = rec.body?.realRadius_m || 1;
+    const weight = radius / dist; // apparent angular footprint
     clutter.addScaledVector(d.normalize(), weight);
   }
   if (clutter.lengthSq() < 1e-12) {
     // Nothing else around — keep the current view direction.
     return new Vector3().subVectors(camera.position, target).normalize();
   }
-  return clutter.negate().normalize(); // point away from clutter
+  return clutter.normalize(); // SAME side as clutter → look-past-body points away
 }
 
 function smartFocus(rec) {

@@ -57,13 +57,17 @@ export function createSelectiveBloom({ renderer, scene, camera, extraPass = null
 
   // Selection outline. We keep selectedObjects empty by default; main.js fills it on
   // click. Runs after the bloom mix so the outline sits on top of the glow.
+  // Values tuned high so the silhouette stays clearly visible at any zoom — focused
+  // body should always be obvious.
   const outlinePass = new OutlinePass(new Vector2(size.x, size.y), scene, camera);
-  outlinePass.edgeStrength = 6.0;
-  outlinePass.edgeGlow = 0.6;
-  outlinePass.edgeThickness = 1.6;
+  outlinePass.edgeStrength = 10.0;
+  outlinePass.edgeGlow = 1.0;
+  outlinePass.edgeThickness = 3.0;
   outlinePass.pulsePeriod = 0.0;
   outlinePass.visibleEdgeColor.set('#ffd24a');
-  outlinePass.hiddenEdgeColor.set('#000000');
+  // hiddenEdgeColor makes the outline still draw a faint trace where the body is
+  // occluded — keeps the highlight present even if something briefly passes in front.
+  outlinePass.hiddenEdgeColor.set('#8a6b1f');
   finalComposer.addPass(outlinePass);
 
   if (extraPass) finalComposer.addPass(extraPass);
