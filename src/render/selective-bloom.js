@@ -1,8 +1,9 @@
-import { Layers, MeshBasicMaterial, ShaderMaterial, Vector2 } from 'three';
+import { Layers, MeshBasicMaterial, ShaderMaterial, Vector2, Vector3 } from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { OutlinePass } from 'three/examples/jsm/postprocessing/OutlinePass.js';
 
 // Render layer reserved for bloom-emitting objects (stars, supernova FX). Anything else gets
 // darkened to black before the bloom pass so its colors don't bleed into the glow.
@@ -53,6 +54,18 @@ export function createSelectiveBloom({ renderer, scene, camera, extraPass = null
   const finalComposer = new EffectComposer(renderer);
   finalComposer.addPass(new RenderPass(scene, camera));
   finalComposer.addPass(mixPass);
+
+  // Selection outline. We keep selectedObjects empty by default; main.js fills it on
+  // click. Runs after the bloom mix so the outline sits on top of the glow.
+  const outlinePass = new OutlinePass(new Vector2(size.x, size.y), scene, camera);
+  outlinePass.edgeStrength = 6.0;
+  outlinePass.edgeGlow = 0.6;
+  outlinePass.edgeThickness = 1.6;
+  outlinePass.pulsePeriod = 0.0;
+  outlinePass.visibleEdgeColor.set('#ffd24a');
+  outlinePass.hiddenEdgeColor.set('#000000');
+  finalComposer.addPass(outlinePass);
+
   if (extraPass) finalComposer.addPass(extraPass);
 
   const cached = new Map();
@@ -79,7 +92,12 @@ export function createSelectiveBloom({ renderer, scene, camera, extraPass = null
   function setSize(w, h) {
     bloomComposer.setSize(w, h);
     finalComposer.setSize(w, h);
+    outlinePass.setSize(w, h);
   }
 
-  return { render, setSize };
+  function setOutlineSelection(objects) {
+    outlinePass.selectedObjects = objects || [];
+  }
+
+  return { render, setSize, setOutlineSelection, outlinePass };
 }

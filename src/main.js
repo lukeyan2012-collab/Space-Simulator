@@ -34,6 +34,7 @@ import { createTrajectoryLine } from '@/render/trajectory-line.js';
 import { createAutosave } from '@/persistence/autosave.js';
 import { createToaster } from '@/ui/toast.js';
 import { PRESETS } from '@/data/presets.js';
+import { createSettingsPanel } from '@/ui/settings-panel.js';
 
 const _testCanvas = document.createElement('canvas');
 if (!_testCanvas.getContext('webgl2')) {
@@ -138,6 +139,9 @@ function spawnFromManifest(spec, position = [0,0,0], velocity = [0,0,0]) {
   // Subsequent spin() uses local-Y rotation, so it composes with this tilt.
   if (spec.axialTilt_deg) mesh.rotateZ(spec.axialTilt_deg * Math.PI / 180);
   scene.add(mesh);
+  // Physics uses the manifest's true mass + position only — the visual mesh / GLB shell
+  // is rendering-only. Mass scaling via the size slider multiplies by mult³ (volume),
+  // never by visual radius.
   engine.addBody({ id: uid, mass: spec.realMass_kg, position, velocity });
   const rec = createBodyRecord(spec, mesh, r, uid);
   rec.overlays = [];
@@ -155,6 +159,7 @@ function spawnFromManifest(spec, position = [0,0,0], velocity = [0,0,0]) {
 
   records.push(rec);
   autosave?.markDirty();
+  refreshActiveList();
   return rec;
 }
 
@@ -171,7 +176,14 @@ function removeRecord(id) {
     });
     records.splice(i, 1);
     autosave?.markDirty();
+    refreshActiveList();
   }
+}
+
+// Forward-declared so spawnFromManifest / removeRecord can call it before sidebar is built.
+let _sidebar = null;
+function refreshActiveList() {
+  _sidebar?.setActiveBodies(records, followedId);
 }
 
 // Stage 2 demo: Sun + Earth from the manifest. Earth orbits the Sun in the XZ plane (ecliptic).
@@ -216,7 +228,9 @@ createSelectionRaycaster({
       followedId = null;
       sizeSlider.hide();
       refreshFollowedOrbit();
+      refreshActiveList();
     }
+    updateSelectionOutline();
   },
   onHover: (rec, prev) => {
     if (prev) {
@@ -334,11 +348,21 @@ const dragDrop = createDragDrop({
     schedulePrediction(); // initial prediction with default direction + speed
   },
 });
-createSidebar({
+_sidebar = createSidebar({
   manifest,
   onDragStart: (id) => dragDrop.beginDragFromSidebar(id),
   onTapAdd: (id) => dragDrop.armForTapAdd(id),
+  onFocusBody: (uid) => {
+    const rec = records.find(r => r.id === uid);
+    if (!rec) return;
+    if (selected) selected.selected = false;
+    selected = rec;
+    selected.selected = true;
+    smartFocus(rec);
+  },
 });
+refreshActiveList();
+createSettingsPanel();
 
 // Top-center "Adjust size" slider — appears whenever a body is double-click-pinned. Drag it
 // to rescale the focused body. Mass scales as r³ (volume-proportional). Stars exceeding 8 M☉
@@ -563,25 +587,63 @@ if (_prev && Array.isArray(_prev) && _prev.length > 0
   autosave.clear();
 }
 
-// Smart-focus: pin the camera to a body and re-zoom so it fills ~28% of screen height.
-// If the camera is already comfortably framed (within 0.4×..2.5× of the desired distance),
-// don't move it — just pin. Direction from camera to body is preserved so we don't disorient.
+// Smart-focus: pin the camera to a body and re-zoom so the body fills exactly
+// FOCUS_FRACTION of screen height — REGARDLESS of where the camera started. The
+// camera is also rotated so no other body sits directly behind the focused one
+// (we'd see the Sun peeking out around Earth otherwise). Background becomes the
+// starfield instead.
 const FOCUS_FRACTION = 0.28; // target body diameter as a fraction of screen height
+
+// Pick a unit vector pointing from the focused body towards a region of empty space.
+// We sum gravitational-pull vectors from every OTHER body (mass / distance²) — the
+// resultant points to where the visual clutter is — then place the camera in the
+// opposite direction. Falls back to current camera direction if no other bodies exist.
+function pickClearViewDirection(focused) {
+  const target = focused.object.position;
+  const clutter = new Vector3();
+  for (const rec of records) {
+    if (rec === focused) continue;
+    if (rec._trapping) continue;
+    const d = new Vector3().subVectors(rec.object.position, target);
+    const dist = d.length();
+    if (dist < 1e-6) continue;
+    // weight ∝ apparent angular footprint = mass-as-proxy / dist² (use realMass to keep
+    // it independent of visual scale). Bigger / closer bodies dominate the result.
+    const weight = (rec.body?.realMass_kg || 1) / (dist * dist);
+    clutter.addScaledVector(d.normalize(), weight);
+  }
+  if (clutter.lengthSq() < 1e-12) {
+    // Nothing else around — keep the current view direction.
+    return new Vector3().subVectors(camera.position, target).normalize();
+  }
+  return clutter.negate().normalize(); // point away from clutter
+}
+
 function smartFocus(rec) {
   const fovRad = camera.fov * Math.PI / 180;
+  // World-space radius of the focused body's visual sphere. Always frame the body to
+  // the same target fraction, no matter where the camera was beforehand.
   const worldR = (rec.sceneScale || 1) * currentSizeMult(rec);
   const desiredDist = worldR / (FOCUS_FRACTION * Math.tan(fovRad / 2));
 
-  const offset = new Vector3().subVectors(camera.position, rec.object.position);
-  const currentDist = offset.length() || 1;
-  if (currentDist < desiredDist * 0.4 || currentDist > desiredDist * 2.5) {
-    offset.normalize().multiplyScalar(desiredDist);
-    camera.position.copy(rec.object.position).add(offset);
-  }
+  const dir = pickClearViewDirection(rec);
+  camera.position.copy(rec.object.position).addScaledVector(dir, desiredDist);
+  // Tilt slightly above the body's equatorial plane so we're not looking straight
+  // down its rotational axis (more interesting framing, and avoids the OrbitControls
+  // polar singularity).
+  camera.position.y += worldR * 0.4;
+  camera.up.set(0, 1, 0);
+  // controls.target MUST be the body's position before follow() takes over — otherwise
+  // the first follow tick shifts the camera by (bodyPos − oldTarget), which can be huge.
+  cam.controls.target.copy(rec.object.position);
+  camera.lookAt(rec.object.position);
+  cam.controls.update();
+
   cam.follow(() => rec.object.position);
   followedId = rec.id;
   sizeSlider.show(currentSizeMult(rec), rec.body.displayName);
   refreshFollowedOrbit();
+  refreshActiveList();
 }
 
 // Arrow-drag direction setter for the ghost. While a ghost is open, pressing on the canvas
@@ -738,6 +800,18 @@ const lensing = createLensingPass({
 });
 const composer = createSelectiveBloom({ renderer, scene, camera, extraPass: lensing.pass });
 
+// Selection outline. OutlinePass renders a crisp silhouette around the actual geometry,
+// regardless of shape (sphere, asteroid, GLB satellite). Prefer the explicit selection;
+// fall back to the followed body so the outline remains while the camera is pinned.
+function updateSelectionOutline() {
+  let target = selected ? selected.object : null;
+  if (!target && followedId) {
+    const r = records.find(r => r.id === followedId);
+    target = r ? r.object : null;
+  }
+  composer.setOutlineSelection(target ? [target] : []);
+}
+
 // Resize: scene's existing handler updates the renderer; also resize the composer's targets.
 window.addEventListener('resize', () => {
   composer.setSize(innerWidth, innerHeight);
@@ -798,6 +872,11 @@ function tick(now) {
     const s = engine.getState(selected.id);
     if (s) props.update({ body: selected.body, state: s, lod: selected.currentLod });
   }
+
+  // Keep the selection outline in sync with `selected` every frame. Cheap (just an
+  // array assignment on OutlinePass) and avoids sprinkling update calls through every
+  // code path that changes the selection.
+  updateSelectionOutline();
 
   // Update lensing uniforms with current black-hole screen positions, then render via the
   // selective-bloom composer (which also runs the lensing pass at the end).

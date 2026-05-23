@@ -3,7 +3,7 @@ const CATEGORIES = ['Planets','Moons','Stars','Star Remnants & Nebulae','Asteroi
 // Vertical sidebar widget with the categories flow-wrapped as pills inside it. Clicking a
 // category expands its body list; clicking the active category again collapses. The search
 // box filters across ALL categories regardless of which is active.
-export function createSidebar({ manifest, onDragStart = () => {}, onTapAdd = () => {} }) {
+export function createSidebar({ manifest, onDragStart = () => {}, onTapAdd = () => {}, onFocusBody = () => {} }) {
   const root = document.createElement('aside');
   root.className = 'sidebar';
   root.innerHTML = `
@@ -11,7 +11,11 @@ export function createSidebar({ manifest, onDragStart = () => {}, onTapAdd = () 
       <input class="sb-search" type="search" placeholder="Search…" />
       <div class="sb-cats" role="tablist"></div>
     </div>
-    <div class="sb-items" hidden></div>`;
+    <div class="sb-items" hidden></div>
+    <div class="sb-active">
+      <div class="sb-active-title">In simulation</div>
+      <div class="sb-active-list"></div>
+    </div>`;
   document.getElementById('ui-root').appendChild(root);
   // Stop canvas pickers from firing through the sidebar.
   root.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -97,5 +101,31 @@ export function createSidebar({ manifest, onDragStart = () => {}, onTapAdd = () 
     itemsPane.hidden = false;
   });
 
-  return { root };
+  // "In simulation" — populated from main.js via setActiveBodies(records, focusedUid).
+  // Click a row to call onFocusBody(uid).
+  const activeList = root.querySelector('.sb-active-list');
+  function setActiveBodies(records, focusedUid = null) {
+    activeList.innerHTML = '';
+    if (!records || records.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'sb-active-empty';
+      empty.textContent = 'No bodies yet — drag from a category above.';
+      activeList.appendChild(empty);
+      return;
+    }
+    for (const r of records) {
+      const row = document.createElement('div');
+      row.className = 'sb-active-row';
+      if (r.id === focusedUid) row.classList.add('sb-active-current');
+      const color = r.body?.defaultColor || '#888';
+      const name = r.body?.displayName || r.id;
+      row.innerHTML = `<span class="sb-dot" style="background:${color}"></span><span>${name}</span>`;
+      row.title = `Focus camera on ${name}`;
+      row.addEventListener('click', () => onFocusBody(r.id));
+      activeList.appendChild(row);
+    }
+  }
+  setActiveBodies([]); // seed with empty message
+
+  return { root, setActiveBodies };
 }

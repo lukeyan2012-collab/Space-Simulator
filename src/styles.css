@@ -94,3 +94,32 @@ canvas#scene { position: fixed; inset: 0; display: block; }
 /* Toasts (bottom-center, above time slider) ---------------------------- */
 .toaster { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; z-index: 50; pointer-events: none; }
 .toast { background: rgba(60,30,30,0.92); border: 1px solid #722; color: #fbb; padding: 8px 12px; border-radius: 6px; font-size: 12px; pointer-events: auto; max-width: 360px; }
+
+/* Settings button + panel (bottom-right) ------------------------------- */
+.settings-btn { position: fixed; bottom: 20px; right: 20px; width: 44px; height: 44px; border-radius: 50%; background: rgba(15,15,25,0.78); border: 1px solid #2a2a3a; color: #ddd; display: flex; align-items: center; justify-content: center; cursor: pointer; backdrop-filter: blur(6px); z-index: 8; transition: background 120ms, transform 200ms; }
+.settings-btn:hover { background: rgba(40,40,60,0.92); }
+.settings-btn-active { background: rgba(70,110,160,0.95); border-color: #557; color: #fff; transform: rotate(60deg); }
+.settings-panel { position: fixed; bottom: 76px; right: 20px; width: 320px; background: rgba(15,15,25,0.92); border: 1px solid #2a2a3a; border-radius: 8px; padding: 0; backdrop-filter: blur(8px); z-index: 8; font-size: 12px; color: #ddd; }
+.settings-panel[hidden] { display: none; }
+.settings-panel .sp-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #2a2a3a; }
+.settings-panel h3 { margin: 0; font-size: 14px; letter-spacing: 0.06em; }
+.settings-panel .sp-close { background: none; border: 0; color: #888; font-size: 20px; cursor: pointer; line-height: 1; padding: 0 4px; }
+.settings-panel .sp-close:hover { color: #fff; }
+.settings-panel .sp-section { padding: 12px 14px; }
+.settings-panel .sp-row { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+.settings-panel .sp-label { flex: 1; }
+.settings-panel .sp-key { font-size: 12.5px; margin-bottom: 3px; }
+.settings-panel .sp-desc { opacity: 0.6; font-size: 11px; line-height: 1.45; }
+.settings-panel .sp-action { background: rgba(70,110,160,0.95); border: 1px solid #557; color: #fff; padding: 7px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.settings-panel .sp-action:hover { background: rgba(90,140,200,1); }
+.settings-panel code { background: rgba(60,60,90,0.5); padding: 1px 5px; border-radius: 3px; font-size: 11px; }
+
+/* Sidebar "In simulation" section -------------------------------------- */
+.sb-active { margin-top: 14px; padding-top: 12px; border-top: 1px solid #2a2a3a; }
+.sb-active .sb-active-title { font-size: 11px; opacity: 0.65; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px; }
+.sb-active .sb-active-empty { font-size: 11px; opacity: 0.5; padding: 4px 0; }
+.sb-active .sb-active-list { display: flex; flex-direction: column; gap: 3px; max-height: 280px; overflow-y: auto; }
+.sb-active .sb-active-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 4px; cursor: pointer; user-select: none; font-size: 12px; }
+.sb-active .sb-active-row:hover { background: rgba(40,40,60,0.6); }
+.sb-active .sb-active-row.sb-active-current { background: rgba(70,110,160,0.55); color: #fff; }
+.sb-active .sb-active-row.sb-active-current:hover { background: rgba(90,140,200,0.7); }

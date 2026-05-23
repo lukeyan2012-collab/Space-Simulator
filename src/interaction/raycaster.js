@@ -1,8 +1,14 @@
 import { Raycaster, Vector2 } from 'three';
 
-// click → onSelect(rec | null). pointermove → onHover(rec | null).
-// Uses 'click' (not 'pointerdown') so OrbitControls drag doesn't trigger spurious selects.
-// Coexists with main.js's separate 'dblclick' listener for camera pin/unpin.
+// Selection raycaster.
+//
+// onSelect(rec | null) fires only on a genuine *click* — a primary-button press that ends
+// near where it started. A drag (camera-orbit) does NOT fire onSelect, so an empty-space
+// drag won't unfocus the currently followed body. Threshold is in CSS pixels.
+//
+// onHover fires continuously on pointermove.
+const DRAG_THRESHOLD_PX = 6;
+
 export function createSelectionRaycaster({ camera, domElement, getRecords, onSelect, onHover }) {
   const ray = new Raycaster();
   const mouse = new Vector2();
@@ -26,8 +32,27 @@ export function createSelectionRaycaster({ camera, domElement, getRecords, onSel
     return records.find(r => r.object === n) ?? null;
   }
 
-  domElement.addEventListener('click', (e) => {
+  // Track the pointerdown that started the current gesture so we can decide on pointerup
+  // whether it was a click (small motion → select) or a drag (large motion → ignore).
+  let downState = null;
+  domElement.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
+    downState = { x: e.clientX, y: e.clientY, id: e.pointerId };
+  });
+  // pointerup needs to be on window so it still fires when the mouse leaves the canvas
+  // mid-drag (camera orbits often end with the cursor outside the original element).
+  window.addEventListener('pointerup', (e) => {
+    if (!downState || e.button !== 0 || e.pointerId !== downState.id) {
+      downState = null;
+      return;
+    }
+    const dx = e.clientX - downState.x;
+    const dy = e.clientY - downState.y;
+    const moved = Math.hypot(dx, dy);
+    downState = null;
+    if (moved > DRAG_THRESHOLD_PX) return; // drag, not a click
+    // Make sure the pointerup landed on (or above) our canvas before treating as a click.
+    if (e.target !== domElement) return;
     onSelect(pick(e));
   });
 
