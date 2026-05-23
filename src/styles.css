@@ -70,8 +70,10 @@ canvas#scene { position: fixed; inset: 0; display: block; }
 .time-slider input[type=range] { width: 100%; }
 .time-slider .ts-hint { font-size: 10px; opacity: 0.5; margin-top: 4px; text-align: center; }
 
-/* Ghost-spawn configuration panel (right side, mid-height) ------------- */
-.ghost-panel { position: fixed; top: 50%; right: 16px; transform: translateY(-50%); width: 280px; background: rgba(15,15,25,0.85); border: 1px solid #2a2a3a; border-radius: 8px; padding: 14px 14px 10px 14px; font-size: 12px; backdrop-filter: blur(8px); z-index: 7; }
+/* Ghost-spawn configuration panel (left side, just to the right of the sidebar) ----- */
+/* Sidebar lives at left:16 with width 280 → place the ghost panel at left:312 so it
+   sits beside the sidebar, keeping all the "stuff you're working on" on the left half. */
+.ghost-panel { position: fixed; top: 50%; left: 312px; transform: translateY(-50%); width: 280px; background: rgba(15,15,25,0.85); border: 1px solid #2a2a3a; border-radius: 8px; padding: 14px 14px 10px 14px; font-size: 12px; backdrop-filter: blur(8px); z-index: 7; }
 .ghost-panel[hidden] { display: none; }
 .ghost-panel .gp-title { margin: 0 0 4px 0; font-size: 14px; letter-spacing: 0.06em; }
 .ghost-panel .gp-name { font-size: 13px; font-weight: 600; opacity: 0.85; margin-bottom: 10px; }
